@@ -1,5 +1,6 @@
 [![Latest Version](https://img.shields.io/crates/v/turbo_base64.svg)](https://crates.io/crates/turbo_base64)
 [![License](https://img.shields.io/github/license/frozen-lab/turbo_base64?logo=open-source-initiative&logoColor=white)](https://github.com/frozen-lab/turbo_base64/blob/master/LICENSE)
+[![Tests](https://github.com/frozen-lab/turbo_base64/actions/workflows/tests.yaml/badge.svg)](https://github.com/frozen-lab/turbo_base64/actions/workflows/tests.yaml)
 
 # TurboBase64
 
@@ -24,10 +25,10 @@ Observed measurements for encode,
 
 | Payload      | Avg Time     | Throughput   |
 |:-------------|:-------------|:-------------|
-| 32 B         | 100.93 ns    | 302.36 MiB/s |
-| 1 KiB        | 1.30 µs      | 749.08 MiB/s |
-| 4 KiB        | 4.21 µs      | 926.41 MiB/s |
-| 64 KiB       | 61.47 µs     | 1.0167 GiB/s |
+| 4 KiB        | 2.82 µs      | 1.35 GiB/s   |
+| 64 KiB       | 44.95 µs     | 1.36 GiB/s   |
+| 128 KiB      | 99.08 µs     | 1.23 GiB/s   |
+| 256 KiB      | 195.10 µs    | 1.25 GiB/s   |
 
 Observed measurements for decode,
 
