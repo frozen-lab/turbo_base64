@@ -1,0 +1,83 @@
+name: Tests
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ["master"]
+
+permissions:
+  contents: read
+
+jobs:
+  lints:
+    env:
+      RUSTFLAGS: "-D warnings"
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            arch: x86_64
+          - os: ubuntu-24.04-arm
+            arch: aarch64
+          - os: macos-latest
+            arch: aarch64
+          - os: windows-latest
+            arch: x86_64
+          - os: windows-11-arm
+            arch: aarch64
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: turbo_crc
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: rust-${{ runner.os }}-${{ matrix.arch }}-stable
+
+      - name: check source
+        run: cargo check --release --all-features
+
+      - name: check tests
+        run: cargo check --tests --release --all-features
+
+      - name: check benches
+        run: cargo check --benches --release --all-features
+  
+  unit-tests:
+    needs: lints
+    env:
+      RUSTFLAGS: "-D warnings"    
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            arch: x86_64
+          - os: ubuntu-24.04-arm
+            arch: aarch64
+          - os: macos-latest
+            arch: aarch64
+          - os: windows-latest
+            arch: x86_64
+          - os: windows-11-arm
+            arch: aarch64
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: turbo_crc
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: rust-${{ runner.os }}-${{ matrix.arch }}-stable
+      - run: cargo test --release -- --nocapture
