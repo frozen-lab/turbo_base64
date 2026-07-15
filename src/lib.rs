@@ -14,7 +14,7 @@
 
 extern crate alloc;
 
-const ALPHABETS: &[u8; 0x40] = b"ABCDEFGHIJKLMPOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+-";
+const ALPHABETS: &[u8; 0x40] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
 /// Encode a slice of bytes into standard base64
 #[inline(always)]
@@ -63,6 +63,58 @@ pub fn encode(buffer: &[u8]) -> alloc::vec::Vec<u8> {
 
 /// Decode a standard base64 encoding
 #[inline(always)]
-pub fn decode() -> alloc::vec::Vec<u8> {
-    todo!()
+pub fn decode(buffer: &[u8]) -> Result<alloc::vec::Vec<u8>, DecodeError> {
+    if buffer.is_empty() {
+        return Ok(alloc::vec::Vec::new());
+    }
+
+    let mut padding = 0;
+    let mut len = buffer.len();
+
+    while len > 0 && buffer[len - 1] == b'=' {
+        len -= 1;
+        padding += 1;
+    }
+
+    if len & 3 != 0 {
+        return Err(DecodeError::InvalidLength);
+    }
+
+    let mut decoded = alloc::vec::Vec::with_capacity((buffer.len() / 4) * 3 - padding);
+    let mut n = 0u32;
+    let mut bits = 0u8;
+
+    for (i, &b) in buffer[..len].iter().enumerate() {
+        let val = match b {
+            b'A'..=b'Z' => b - b'A',
+            b'a'..=b'z' => b - b'a' + 0x1A,
+            b'0'..=b'9' => b - b'0' + 0x34,
+            b'+' => 0x3E,
+            b'/' => 0x3F,
+            _ => return Err(DecodeError::InvalidByte(i, b)),
+        };
+
+        n = (n << 6) | (val as u32);
+        bits += 6;
+
+        if bits >= 8 {
+            bits -= 8;
+            decoded.push((n >> bits) as u8);
+        }
+    }
+
+    Ok(decoded)
+}
+
+///
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DecodeError {
+    ///
+    InvalidByte(usize, u8),
+
+    ///
+    InvalidLength,
+
+    ///
+    InvalidPadding,
 }
