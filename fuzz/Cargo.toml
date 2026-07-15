@@ -22,3 +22,17 @@ path = "fuzzers/decode_rand.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "parity_with_base64"
+path = "fuzzers/parity_with_base64.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "roundtrip"
+path = "fuzzers/roundtrip.rs"
+test = false
+doc = false
+bench = false
