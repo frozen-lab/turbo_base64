@@ -41,3 +41,10 @@ version = "0.22.1"
 
 [dev-dependencies.rand]
 version = "0.10.2"
+
+[dev-dependencies.criterion]
+version = "0.8.2"
+
+[[bench]]
+name = "bench"
+harness = false

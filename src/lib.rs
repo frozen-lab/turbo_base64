@@ -277,7 +277,7 @@ mod tests {
     mod standard_parity {
         use super::*;
         use base64::prelude::*;
-        use rand::{rng, RngExt};
+        use rand::{RngExt, rng};
 
         #[test]
         fn ok_randomized_encoding_and_decoding_parity() {
@@ -340,8 +340,8 @@ mod tests {
     mod utf8_compliance {
         use super::*;
         use alloc::string::String;
-        use base64::{prelude::BASE64_STANDARD, Engine};
-        use rand::{rng, RngExt};
+        use base64::{Engine, prelude::BASE64_STANDARD};
+        use rand::{RngExt, rng};
 
         #[test]
         fn ok_utf8_multibyte_parities() {
