@@ -17,8 +17,8 @@ version = "0.22.1"
 path = ".."
 
 [[bin]]
-name = "fuzzer"
-path = "fuzz_targets/fuzzer.rs"
+name = "decode_rand"
+path = "fuzzers/decode_rand.rs"
 test = false
 doc = false
 bench = false
