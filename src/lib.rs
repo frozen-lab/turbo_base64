@@ -1,4 +1,21 @@
-//! Hardware accelerated encoding and decoding of bytes or utf-8 as base64
+//! Hardware accelerated encoding and decoding of bytes or utf-8 as standard RFC 4648 base64 spec
+//!
+//! The encoding and decoding of bytes or UTF-8 as base64 are according to the standard
+//! [RFC 4648](https://datatracker.ietf.org/doc/html/rfc4648) specification.
+//!
+//! ## Example
+//!
+//! ```
+//! use turbo_base64::{encode, decode};
+//!
+//! let data = b"Hello, Rust!";
+//!
+//! let encoded = encode(data);
+//! assert_eq!(encoded, b"SGVsbG8sIFJ1c3Qh");
+//!
+//! let decoded = decode(&encoded).unwrap();
+//! assert_eq!(decoded, data);
+//! ```
 
 #![no_std]
 #![deny(
@@ -16,7 +33,19 @@ extern crate alloc;
 
 const ALPHABETS: &[u8; 0x40] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
-/// Encode a slice of bytes into standard base64
+/// Encodes a slice of bytes into standard RFC 4648 base64
+///
+/// ## Example
+///
+/// ```
+/// use turbo_base64::encode;
+///
+/// let encoded = encode(b"fooba");
+/// assert_eq!(encoded, b"Zm9vYmE=");
+///
+/// let encoded_empty = encode(b"");
+/// assert_eq!(encoded_empty, b"");
+/// ```
 #[inline(always)]
 pub fn encode(buffer: &[u8]) -> alloc::vec::Vec<u8> {
     let mut encoded = alloc::vec::Vec::new();
@@ -61,7 +90,22 @@ pub fn encode(buffer: &[u8]) -> alloc::vec::Vec<u8> {
     encoded
 }
 
-/// Decode a standard base64 encoding
+/// Decodes a standard RFC 4648 base64 encoded byte slice
+///
+/// ## Example
+///
+/// ```
+/// use turbo_base64::{encode, decode, DecodeError};
+///
+/// let decoded = decode(b"Zm9vYmFy").unwrap();
+/// assert_eq!(decoded, b"foobar");
+///
+/// let decoded_padded = decode(b"Zm8=").unwrap();
+/// assert_eq!(decoded_padded, b"fo");
+///
+/// assert_eq!(decode(b"Zg ="), Err(DecodeError::InvalidByte(2, b' ')));
+/// assert_eq!(decode(b"Z"), Err(DecodeError::InvalidLength));
+/// ```
 #[inline(always)]
 pub fn decode(buffer: &[u8]) -> Result<alloc::vec::Vec<u8>, DecodeError> {
     if buffer.is_empty() {
@@ -118,74 +162,110 @@ pub fn decode(buffer: &[u8]) -> Result<alloc::vec::Vec<u8>, DecodeError> {
     Ok(decoded)
 }
 
+/// Errors that can occur during strict base64 decoding
 ///
+/// ## Example
+///
+/// ```
+/// use turbo_base64::{decode, DecodeError};
+///
+/// assert_eq!(decode(b"Z"), Err(DecodeError::InvalidLength));
+/// assert_eq!(decode(b"Z=9v"), Err(DecodeError::InvalidPadding));
+/// assert_eq!(decode(b"Zg ="), Err(DecodeError::InvalidByte(2, b' ')));
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DecodeError {
+    /// Encountered a character outside the standard base64 alphabet
     ///
+    /// ## Example
+    ///
+    /// ```
+    /// use turbo_base64::{decode, DecodeError};
+    ///
+    /// assert_eq!(decode(b"Zg ="), Err(DecodeError::InvalidByte(2, b' ')));
+    /// ```
     InvalidByte(usize, u8),
 
+    /// The length of the input buffer was not a multiple of `4`
     ///
+    /// ## Example
+    ///
+    /// ```
+    /// use turbo_base64::{decode, DecodeError};
+    ///
+    /// assert_eq!(decode(b"Z"), Err(DecodeError::InvalidLength));
+    /// ```
     InvalidLength,
 
+    /// Padding `=` characters were misplaced or exceeded the maximum of `2`
     ///
+    /// ## Example
+    ///
+    /// ```
+    /// use turbo_base64::{decode, DecodeError};
+    ///
+    /// assert_eq!(decode(b"Z=9v"), Err(DecodeError::InvalidPadding));
+    /// ```
     InvalidPadding,
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use alloc::vec;
 
-    #[test]
-    fn ok_rfc4648_vectors() {
-        // testing against standard RFC 4648 test vectors
-        let tests = [
-            (b"".as_slice(), b"".as_slice()),
-            (b"f".as_slice(), b"Zg==".as_slice()),
-            (b"fo".as_slice(), b"Zm8=".as_slice()),
-            (b"foo".as_slice(), b"Zm9v".as_slice()),
-            (b"foob".as_slice(), b"Zm9vYg== ".as_slice()),
-            (b"fooba".as_slice(), b"Zm9vYmE=".as_slice()),
-            (b"foobar".as_slice(), b"Zm9vYmFy".as_slice()),
-        ];
+    mod rfc_4648 {
+        use super::*;
 
-        for (plain, expected_encoded) in tests {
-            let expected_encoded = expected_encoded.strip_suffix(b" ").unwrap_or(expected_encoded);
+        #[test]
+        fn ok_rfc4648_vectors() {
+            let tests = [
+                (b"".as_slice(), b"".as_slice()),
+                (b"f".as_slice(), b"Zg==".as_slice()),
+                (b"fo".as_slice(), b"Zm8=".as_slice()),
+                (b"foo".as_slice(), b"Zm9v".as_slice()),
+                (b"foob".as_slice(), b"Zm9vYg== ".as_slice()),
+                (b"fooba".as_slice(), b"Zm9vYmE=".as_slice()),
+                (b"foobar".as_slice(), b"Zm9vYmFy".as_slice()),
+            ];
 
-            let enc = encode(plain);
-            assert_eq!(enc, expected_encoded);
+            for (plain, expected_encoded) in tests {
+                let expected_encoded = expected_encoded.strip_suffix(b" ").unwrap_or(expected_encoded);
 
-            let dec = decode(&enc).unwrap();
-            assert_eq!(dec, plain);
+                let enc = encode(plain);
+                assert_eq!(enc, expected_encoded);
+
+                let dec = decode(&enc).unwrap();
+                assert_eq!(dec, plain);
+            }
         }
-    }
 
-    #[test]
-    fn test_invalid_length() {
-        assert_eq!(decode(b"Z"), Err(DecodeError::InvalidLength));
-        assert_eq!(decode(b"Zg"), Err(DecodeError::InvalidLength));
-        assert_eq!(decode(b"Zg="), Err(DecodeError::InvalidLength));
-        assert_eq!(decode(b"Zm9vY"), Err(DecodeError::InvalidLength));
-    }
+        #[test]
+        fn ok_invalid_length() {
+            assert_eq!(decode(b"Z"), Err(DecodeError::InvalidLength));
+            assert_eq!(decode(b"Zg"), Err(DecodeError::InvalidLength));
+            assert_eq!(decode(b"Zg="), Err(DecodeError::InvalidLength));
+            assert_eq!(decode(b"Zm9vY"), Err(DecodeError::InvalidLength));
+        }
 
-    #[test]
-    fn test_invalid_chars() {
-        assert_eq!(decode(b"Zg ="), Err(DecodeError::InvalidByte(2, b' ')));
-        assert_eq!(decode(b"Zg\n="), Err(DecodeError::InvalidByte(2, b'\n')));
-        assert_eq!(decode(b"Zm9v-mFy"), Err(DecodeError::InvalidByte(4, b'-')));
-    }
+        #[test]
+        fn ok_invalid_chars() {
+            assert_eq!(decode(b"Zg ="), Err(DecodeError::InvalidByte(2, b' ')));
+            assert_eq!(decode(b"Zg\n="), Err(DecodeError::InvalidByte(2, b'\n')));
+            assert_eq!(decode(b"Zm9v-mFy"), Err(DecodeError::InvalidByte(4, b'-')));
+        }
 
-    #[test]
-    fn test_invalid_padding_placement() {
-        assert_eq!(decode(b"=m9v"), Err(DecodeError::InvalidPadding));
-        assert_eq!(decode(b"Z=9v"), Err(DecodeError::InvalidPadding));
-    }
+        #[test]
+        fn ok_invalid_padding_placement() {
+            assert_eq!(decode(b"=m9v"), Err(DecodeError::InvalidPadding));
+            assert_eq!(decode(b"Z=9v"), Err(DecodeError::InvalidPadding));
+        }
 
-    #[test]
-    fn test_binary_roundtrip() {
-        let binary_data: vec::Vec<u8> = (0..=255).collect();
-        let enc = encode(&binary_data);
-        let dec = decode(&enc).unwrap();
-        assert_eq!(dec, binary_data);
+        #[test]
+        fn ok_binary_roundtrip() {
+            let binary_data: alloc::vec::Vec<u8> = (0..=255).collect();
+            let enc = encode(&binary_data);
+            let dec = decode(&enc).unwrap();
+            assert_eq!(dec, binary_data);
+        }
     }
 }
