@@ -1,4 +1,4 @@
-//! Hardware accelerated encoding and decoding of bytes or utf-8 as standard RFC 4648 base64 spec
+//! Hardware accelerated encoding and decoding of bytes or utf-8 using standard RFC 4648 base64 spec
 //!
 //! The encoding and decoding of bytes or UTF-8 as base64 are according to the standard
 //! [RFC 4648](https://datatracker.ietf.org/doc/html/rfc4648) specification.
@@ -159,6 +159,10 @@ pub fn decode(buffer: &[u8]) -> Result<alloc::vec::Vec<u8>, DecodeError> {
         }
     }
 
+    if bits > 0 && (n & ((1 << bits) - 1)) != 0 {
+        return Err(DecodeError::InvalidPadding);
+    }
+
     Ok(decoded)
 }
 
@@ -229,7 +233,8 @@ mod tests {
             ];
 
             for (plain, expected_encoded) in tests {
-                let expected_encoded = expected_encoded.strip_suffix(b" ").unwrap_or(expected_encoded);
+                let expected_encoded =
+                    expected_encoded.strip_suffix(b" ").unwrap_or(expected_encoded);
 
                 let enc = encode(plain);
                 assert_eq!(enc, expected_encoded);
@@ -272,7 +277,7 @@ mod tests {
     mod standard_parity {
         use super::*;
         use base64::prelude::*;
-        use rand::{RngExt, rng};
+        use rand::{rng, RngExt};
 
         #[test]
         fn ok_randomized_encoding_and_decoding_parity() {
@@ -335,8 +340,8 @@ mod tests {
     mod utf8_compliance {
         use super::*;
         use alloc::string::String;
-        use base64::{Engine, prelude::BASE64_STANDARD};
-        use rand::{RngExt, rng};
+        use base64::{prelude::BASE64_STANDARD, Engine};
+        use rand::{rng, RngExt};
 
         #[test]
         fn ok_utf8_multibyte_parities() {

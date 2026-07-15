@@ -1,0 +1,24 @@
+[package]
+name = "turbo_base64-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+
+[dependencies.base64]
+version = "0.22.1"
+
+[dependencies.turbo_base64]
+path = ".."
+
+[[bin]]
+name = "fuzzer"
+path = "fuzz_targets/fuzzer.rs"
+test = false
+doc = false
+bench = false

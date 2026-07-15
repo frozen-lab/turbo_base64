@@ -8,7 +8,7 @@ license = "MIT OR Apache-2.0"
 categories = ["algorithms", "encoding"]
 repository = "https://github.com/frozen-lab/turbo_base64"
 keywords = ["base64", "simd", "utf8", "encode", "decode", "no_std"]
-description = "Hardware accelerated encoding and decoding of bytes or utf-8 as standard RFC 4648 base64 spec"
+description = "Hardware accelerated encoding and decoding of bytes or utf-8 using standard RFC 4648 base64 spec"
 
 [package.metadata.docs.rs]
 default-target = "x86_64-unknown-linux-gnu"
