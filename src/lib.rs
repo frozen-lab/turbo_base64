@@ -71,10 +71,39 @@ pub fn encode(buffer: &[u8]) -> alloc::vec::Vec<u8> {
     let encoded_len = (buffer.len() + 2) / 3 * 4;
     let mut encoded = alloc::vec::Vec::with_capacity(encoded_len);
 
-    let chunks = buffer.chunks_exact(3);
+    let chunks = buffer.chunks_exact(12);
     let remaining_bytes = chunks.remainder();
 
     for chunk in chunks {
+        let n0 = (chunk[0] as u32) << 0x10 | (chunk[1] as u32) << 8 | chunk[2] as u32;
+        let n1 = (chunk[3] as u32) << 0x10 | (chunk[4] as u32) << 8 | chunk[5] as u32;
+        let n2 = (chunk[6] as u32) << 0x10 | (chunk[7] as u32) << 8 | chunk[8] as u32;
+        let n3 = (chunk[9] as u32) << 0x10 | (chunk[0x0A] as u32) << 8 | chunk[0x0B] as u32;
+
+        encoded.extend_from_slice(&[
+            ALPHABETS[((n0 >> 0x12) & 0x3F) as usize],
+            ALPHABETS[((n0 >> 0x0C) & 0x3F) as usize],
+            ALPHABETS[((n0 >> 6) & 0x3F) as usize],
+            ALPHABETS[(n0 & 0x3F) as usize],
+            ALPHABETS[((n1 >> 0x12) & 0x3F) as usize],
+            ALPHABETS[((n1 >> 0x0C) & 0x3F) as usize],
+            ALPHABETS[((n1 >> 6) & 0x3F) as usize],
+            ALPHABETS[(n1 & 0x3F) as usize],
+            ALPHABETS[((n2 >> 0x12) & 0x3F) as usize],
+            ALPHABETS[((n2 >> 0x0C) & 0x3F) as usize],
+            ALPHABETS[((n2 >> 6) & 0x3F) as usize],
+            ALPHABETS[(n2 & 0x3F) as usize],
+            ALPHABETS[((n3 >> 0x12) & 0x3F) as usize],
+            ALPHABETS[((n3 >> 0x0C) & 0x3F) as usize],
+            ALPHABETS[((n3 >> 6) & 0x3F) as usize],
+            ALPHABETS[(n3 & 0x3F) as usize],
+        ]);
+    }
+
+    let sub_chunks = remaining_bytes.chunks_exact(3);
+    let remainder = sub_chunks.remainder();
+
+    for chunk in sub_chunks {
         let n = (chunk[0] as u32) << 0x10 | (chunk[1] as u32) << 8 | chunk[2] as u32;
 
         encoded.extend_from_slice(&[
@@ -85,12 +114,10 @@ pub fn encode(buffer: &[u8]) -> alloc::vec::Vec<u8> {
         ]);
     }
 
-    match remaining_bytes.len() {
+    match remainder.len() {
         0 => {}
         1 => {
-            let b0 = remaining_bytes[0] as u32;
-            let n = b0 << 0x10;
-
+            let n = (remainder[0] as u32) << 0x10;
             encoded.extend_from_slice(&[
                 ALPHABETS[((n >> 0x12) & 0x3F) as usize],
                 ALPHABETS[((n >> 0x0C) & 0x3F) as usize],
@@ -99,10 +126,7 @@ pub fn encode(buffer: &[u8]) -> alloc::vec::Vec<u8> {
             ]);
         }
         2 => {
-            let b0 = remaining_bytes[0] as u32;
-            let b1 = remaining_bytes[1] as u32;
-            let n = (b0 << 0x10) | (b1 << 8);
-
+            let n = (remainder[0] as u32) << 0x10 | (remainder[1] as u32) << 8;
             encoded.extend_from_slice(&[
                 ALPHABETS[((n >> 0x12) & 0x3F) as usize],
                 ALPHABETS[((n >> 0x0C) & 0x3F) as usize],
