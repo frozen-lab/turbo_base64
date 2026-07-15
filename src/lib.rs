@@ -275,7 +275,7 @@ mod tests {
         use rand::{RngExt, rng};
 
         #[test]
-        fn test_randomized_encoding_and_decoding_parity() {
+        fn ok_randomized_encoding_and_decoding_parity() {
             let mut rng = rng();
 
             for _ in 0..0x1000 {
@@ -292,10 +292,8 @@ mod tests {
                     "Encoding parity failure at size {len}!"
                 );
 
-                let turbo_decoded = decode(&turbo_encoded).expect("Turbo failed to decode valid payload");
-                let standard_decoded = BASE64_STANDARD
-                    .decode(&standard_encoded)
-                    .expect("Standard failed to decode");
+                let turbo_decoded = decode(&turbo_encoded).unwrap();
+                let standard_decoded = BASE64_STANDARD.decode(&standard_encoded).unwrap();
 
                 assert_eq!(
                     turbo_decoded, standard_decoded,
@@ -305,7 +303,7 @@ mod tests {
         }
 
         #[test]
-        fn test_randomized_error_rejection_parity() {
+        fn ok_randomized_error_rejection_parity() {
             let mut rng = rng();
 
             for _ in 0..0x400 {
@@ -324,11 +322,70 @@ mod tests {
 
                 assert!(
                     turbo_result.is_err(),
-                    "Turbo incorrectly accepted corrupt base64 containing '%' at index {corrupt_index}"
+                    "TurboBase64 incorrectly accepted corrupt base64 containing '%' at index {corrupt_index}"
                 );
                 assert!(
                     standard_result.is_err(),
                     "Standard crate incorrectly accepted corrupt base64"
+                );
+            }
+        }
+    }
+
+    mod utf8_compliance {
+        use super::*;
+        use alloc::string::String;
+        use base64::{Engine, prelude::BASE64_STANDARD};
+        use rand::{RngExt, rng};
+
+        #[test]
+        fn ok_utf8_multibyte_parities() {
+            let ok_strings = [
+                "こんにちは",
+                "Hello World!",
+                "🦀 Rustacean 🦀",
+                "कर्मण्येवाधिकारस्ते मा फलेषु कदाचन",
+                "लाभले आम्हास भाग्य बोलतो मराठी",
+                "🚀 TurboBase64 Base64 Implementation ⚙️",
+                "§ ± ! @ # $ % ^ & * ( ) _ + - = [ ] { } ; ' : \", . / < > ?",
+            ];
+
+            for &text in &ok_strings {
+                let bytes = text.as_bytes();
+
+                let enc = encode(bytes);
+                let dec_bytes = decode(&enc).unwrap();
+
+                let dec_string = String::from_utf8(dec_bytes).unwrap();
+
+                assert_eq!(dec_string, text, "UTF-8 integrity broken during roundtrip!");
+            }
+        }
+
+        #[test]
+        fn ok_randomized_utf8_parity() {
+            let mut rng = rng();
+
+            for _ in 0..0x400 {
+                let len = rng.random_range(1..0x200);
+                let text: String = (0..len).map(|_| rng.random::<char>()).collect();
+                let bytes = text.as_bytes();
+
+                let turbo_encoded = encode(bytes);
+                let standard_encoded = BASE64_STANDARD.encode(bytes);
+
+                assert_eq!(
+                    turbo_encoded,
+                    standard_encoded.as_bytes(),
+                    "UTF-8 Encoding parity failure at string length {len}!"
+                );
+
+                let turbo_decoded = decode(&turbo_encoded).unwrap();
+                let standard_decoded = BASE64_STANDARD.decode(&standard_encoded).unwrap();
+
+                assert_eq!(
+                    turbo_decoded, standard_decoded,
+                    "UTF-8 Decoding parity failure at string length {len}!"
                 );
             }
         }
