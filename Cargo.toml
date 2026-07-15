@@ -35,3 +35,9 @@ codegen-units = 1
 inherits = "release"
 overflow-checks = false
 debug-assertions = false
+
+[dev-dependencies.base64]
+version = "0.22.1"
+
+[dev-dependencies.rand]
+version = "0.10.2"

@@ -268,4 +268,69 @@ mod tests {
             assert_eq!(dec, binary_data);
         }
     }
+
+    mod standard_parity {
+        use super::*;
+        use base64::prelude::*;
+        use rand::{RngExt, rng};
+
+        #[test]
+        fn test_randomized_encoding_and_decoding_parity() {
+            let mut rng = rng();
+
+            for _ in 0..0x1000 {
+                let len = rng.random_range(0..0x2000);
+                let mut original_data = alloc::vec![0u8; len];
+                rng.fill(&mut original_data[..]);
+
+                let turbo_encoded = encode(&original_data);
+                let standard_encoded = BASE64_STANDARD.encode(&original_data);
+
+                assert_eq!(
+                    turbo_encoded,
+                    standard_encoded.as_bytes(),
+                    "Encoding parity failure at size {len}!"
+                );
+
+                let turbo_decoded = decode(&turbo_encoded).expect("Turbo failed to decode valid payload");
+                let standard_decoded = BASE64_STANDARD
+                    .decode(&standard_encoded)
+                    .expect("Standard failed to decode");
+
+                assert_eq!(
+                    turbo_decoded, standard_decoded,
+                    "Decoding parity failure at size {len}!"
+                );
+            }
+        }
+
+        #[test]
+        fn test_randomized_error_rejection_parity() {
+            let mut rng = rng();
+
+            for _ in 0..0x400 {
+                let len = rng.random_range(1..0x200) * 4;
+                let mut valid_base64_string = encode(&alloc::vec![0u8; len / 4 * 3]);
+
+                if valid_base64_string.is_empty() {
+                    continue;
+                }
+
+                let corrupt_index = rng.random_range(0..valid_base64_string.len());
+                valid_base64_string[corrupt_index] = b'%';
+
+                let turbo_result = decode(&valid_base64_string);
+                let standard_result = BASE64_STANDARD.decode(&valid_base64_string);
+
+                assert!(
+                    turbo_result.is_err(),
+                    "Turbo incorrectly accepted corrupt base64 containing '%' at index {corrupt_index}"
+                );
+                assert!(
+                    standard_result.is_err(),
+                    "Standard crate incorrectly accepted corrupt base64"
+                );
+            }
+        }
+    }
 }
