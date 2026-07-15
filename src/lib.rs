@@ -9,10 +9,10 @@
 //!
 //! | Payload      | Avg Time     | Throughput   |
 //! |:-------------|:-------------|:-------------|
-//! | 32 B         | 100.93 ns    | 302.36 MiB/s |
-//! | 1 KiB        | 1.30 µs      | 749.08 MiB/s |
-//! | 4 KiB        | 4.21 µs      | 926.41 MiB/s |
-//! | 64 KiB       | 61.47 µs     | 1.0167 GiB/s |
+//! | 4 KiB        | 2.82 µs      | 1.35 GiB/s   |
+//! | 64 KiB       | 44.95 µs     | 1.36 GiB/s   |
+//! | 128 KiB      | 99.08 µs     | 1.23 GiB/s   |
+//! | 256 KiB      | 195.10 µs    | 1.25 GiB/s   |
 //!
 //! Observed measurements for decode,
 //!
@@ -68,19 +68,21 @@ const ALPHABETS: &[u8; 0x40] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstu
 /// ```
 #[inline(always)]
 pub fn encode(buffer: &[u8]) -> alloc::vec::Vec<u8> {
-    let mut encoded = alloc::vec::Vec::new();
+    let encoded_len = (buffer.len() + 2) / 3 * 4;
+    let mut encoded = alloc::vec::Vec::with_capacity(encoded_len);
 
     let chunks = buffer.chunks_exact(3);
     let remaining_bytes = chunks.remainder();
 
     for chunk in chunks {
-        let (b0, b1, b2) = (chunk[0], chunk[1], chunk[2]);
-        let n = (b0 as u32) << 0x10 | (b1 as u32) << 8 | b2 as u32;
+        let n = (chunk[0] as u32) << 0x10 | (chunk[1] as u32) << 8 | chunk[2] as u32;
 
-        encoded.push(ALPHABETS[((n >> 0x12) & 0x3F) as usize]);
-        encoded.push(ALPHABETS[((n >> 0x0C) & 0x3F) as usize]);
-        encoded.push(ALPHABETS[((n >> 6) & 0x3F) as usize]);
-        encoded.push(ALPHABETS[(n & 0x3F) as usize]);
+        encoded.extend_from_slice(&[
+            ALPHABETS[((n >> 0x12) & 0x3F) as usize],
+            ALPHABETS[((n >> 0x0C) & 0x3F) as usize],
+            ALPHABETS[((n >> 6) & 0x3F) as usize],
+            ALPHABETS[(n & 0x3F) as usize],
+        ]);
     }
 
     match remaining_bytes.len() {
@@ -89,20 +91,24 @@ pub fn encode(buffer: &[u8]) -> alloc::vec::Vec<u8> {
             let b0 = remaining_bytes[0] as u32;
             let n = b0 << 0x10;
 
-            encoded.push(ALPHABETS[((n >> 0x12) & 0x3F) as usize]);
-            encoded.push(ALPHABETS[((n >> 0x0C) & 0x3F) as usize]);
-            encoded.push(b'=');
-            encoded.push(b'=');
+            encoded.extend_from_slice(&[
+                ALPHABETS[((n >> 0x12) & 0x3F) as usize],
+                ALPHABETS[((n >> 0x0C) & 0x3F) as usize],
+                b'=',
+                b'=',
+            ]);
         }
         2 => {
             let b0 = remaining_bytes[0] as u32;
             let b1 = remaining_bytes[1] as u32;
             let n = (b0 << 0x10) | (b1 << 8);
 
-            encoded.push(ALPHABETS[((n >> 0x12) & 0x3F) as usize]);
-            encoded.push(ALPHABETS[((n >> 0x0C) & 0x3F) as usize]);
-            encoded.push(ALPHABETS[((n >> 6) & 0x3F) as usize]);
-            encoded.push(b'=');
+            encoded.extend_from_slice(&[
+                ALPHABETS[((n >> 0x12) & 0x3F) as usize],
+                ALPHABETS[((n >> 0x0C) & 0x3F) as usize],
+                ALPHABETS[((n >> 6) & 0x3F) as usize],
+                b'=',
+            ]);
         }
         _ => unreachable!(),
     }
