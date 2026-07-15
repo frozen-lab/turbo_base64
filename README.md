@@ -12,7 +12,7 @@ Add following to your `Cargo.toml`,
 
 ```toml
 [dependencies]
-turbo_base64 = { version = "0.0.1" }
+turbo_base64 = { version = "0.0.2" }
 
 ```
 

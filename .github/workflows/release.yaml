@@ -29,9 +29,6 @@ jobs:
           - os: windows-11-arm
             arch: aarch64
     runs-on: ${{ matrix.os }}
-    defaults:
-      run:
-        working-directory: turbo_crc
     steps:
       - uses: actions/checkout@v5
 
@@ -87,9 +84,6 @@ jobs:
   publish:
     needs: lints
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: turbo_crc
     steps:
       - uses: actions/checkout@v5
       
