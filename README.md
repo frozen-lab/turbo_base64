@@ -1,6 +1,22 @@
+[![Latest Version](https://img.shields.io/crates/v/turbo_base64.svg)](https://crates.io/crates/turbo_base64)
+[![License](https://img.shields.io/github/license/frozen-lab/turbo_base64?logo=open-source-initiative&logoColor=white)](https://github.com/frozen-lab/turbo_base64/blob/master/LICENSE)
+
 # TurboBase64
 
 Hardware accelerated encoding and decoding of bytes or utf-8 using standard RFC 4648 base64 spec
+
+## Usage
+
+Add following to your `Cargo.toml`,
+
+```toml
+[dependencies]
+turbo_base64 = { version = "0.0.1" }
+
+```
+
+> [!NOTE]
+> Current version of `turbo_base64` requires Rust 1.86 or later.
 
 ## Benchmarks
 
