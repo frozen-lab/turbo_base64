@@ -178,39 +178,143 @@ pub fn decode(buffer: &[u8]) -> Result<alloc::vec::Vec<u8>, DecodeError> {
         return Err(DecodeError::InvalidPadding);
     }
 
+    let mut offset = 0;
     let mut decoded = alloc::vec::Vec::with_capacity((buffer.len() / 4) * 3 - padding);
-    let mut n = 0u32;
-    let mut bits = 0u8;
 
-    for (i, &b) in buffer.iter().enumerate() {
-        if b == b'=' {
-            if i < len {
+    let chunks = buffer[..len].chunks_exact(0x10);
+    let remainder = chunks.remainder();
+
+    for chunk in chunks {
+        let v0 = DECODE_LUT[chunk[0] as usize];
+        let v1 = DECODE_LUT[chunk[1] as usize];
+        let v2 = DECODE_LUT[chunk[2] as usize];
+        let v3 = DECODE_LUT[chunk[3] as usize];
+        let v4 = DECODE_LUT[chunk[4] as usize];
+        let v5 = DECODE_LUT[chunk[5] as usize];
+        let v6 = DECODE_LUT[chunk[6] as usize];
+        let v7 = DECODE_LUT[chunk[7] as usize];
+        let v8 = DECODE_LUT[chunk[8] as usize];
+        let v9 = DECODE_LUT[chunk[9] as usize];
+        let v10 = DECODE_LUT[chunk[0x0A] as usize];
+        let v11 = DECODE_LUT[chunk[0x0B] as usize];
+        let v12 = DECODE_LUT[chunk[0x0C] as usize];
+        let v13 = DECODE_LUT[chunk[0x0D] as usize];
+        let v14 = DECODE_LUT[chunk[0x0E] as usize];
+        let v15 = DECODE_LUT[chunk[0x0F] as usize];
+
+        if (v0 | v1 | v2 | v3 | v4 | v5 | v6 | v7 | v8 | v9 | v10 | v11 | v12 | v13 | v14 | v15)
+            & 0xC0
+            != 0
+        {
+            for (i, &b) in chunk.iter().enumerate() {
+                if DECODE_LUT[b as usize] == 0xFF {
+                    return Err(if b == b'=' {
+                        DecodeError::InvalidPadding
+                    } else {
+                        DecodeError::InvalidByte(offset + i, b)
+                    });
+                }
+            }
+        }
+
+        let n0 = (v0 as u32) << 0x12 | (v1 as u32) << 0x0C | (v2 as u32) << 6 | (v3 as u32);
+        let n1 = (v4 as u32) << 0x12 | (v5 as u32) << 0x0C | (v6 as u32) << 6 | (v7 as u32);
+        let n2 = (v8 as u32) << 0x12 | (v9 as u32) << 0x0C | (v10 as u32) << 6 | (v11 as u32);
+        let n3 = (v12 as u32) << 0x12 | (v13 as u32) << 0x0C | (v14 as u32) << 6 | (v15 as u32);
+
+        decoded.extend_from_slice(&[
+            (n0 >> 0x10) as u8,
+            (n0 >> 8) as u8,
+            n0 as u8,
+            (n1 >> 0x10) as u8,
+            (n1 >> 8) as u8,
+            n1 as u8,
+            (n2 >> 0x10) as u8,
+            (n2 >> 8) as u8,
+            n2 as u8,
+            (n3 >> 0x10) as u8,
+            (n3 >> 8) as u8,
+            n3 as u8,
+        ]);
+
+        offset += 0x10;
+    }
+
+    let sub_chunks = remainder.chunks_exact(4);
+    let final_rem = sub_chunks.remainder();
+
+    for chunk in sub_chunks {
+        let v0 = DECODE_LUT[chunk[0] as usize];
+        let v1 = DECODE_LUT[chunk[1] as usize];
+        let v2 = DECODE_LUT[chunk[2] as usize];
+        let v3 = DECODE_LUT[chunk[3] as usize];
+
+        if (v0 | v1 | v2 | v3) & 0xC0 != 0 {
+            for (i, &b) in chunk.iter().enumerate() {
+                if DECODE_LUT[b as usize] == 0xFF {
+                    return Err(if b == b'=' {
+                        DecodeError::InvalidPadding
+                    } else {
+                        DecodeError::InvalidByte(offset + i, b)
+                    });
+                }
+            }
+        }
+
+        let n = (v0 as u32) << 0x12 | (v1 as u32) << 0x0C | (v2 as u32) << 6 | (v3 as u32);
+        decoded.extend_from_slice(&[(n >> 0x10) as u8, (n >> 8) as u8, n as u8]);
+        offset += 4;
+    }
+
+    match final_rem.len() {
+        0 => {}
+        2 => {
+            let v0 = DECODE_LUT[final_rem[0] as usize];
+            let v1 = DECODE_LUT[final_rem[1] as usize];
+
+            if (v0 | v1) & 0xC0 != 0 {
+                for (i, &b) in final_rem.iter().enumerate() {
+                    if DECODE_LUT[b as usize] == 0xFF {
+                        return Err(if b == b'=' {
+                            DecodeError::InvalidPadding
+                        } else {
+                            DecodeError::InvalidByte(offset + i, b)
+                        });
+                    }
+                }
+            }
+
+            if v1 & 0x0F != 0 {
                 return Err(DecodeError::InvalidPadding);
             }
 
-            continue;
+            decoded.push((v0 << 2) | (v1 >> 4));
         }
+        3 => {
+            let v0 = DECODE_LUT[final_rem[0] as usize];
+            let v1 = DECODE_LUT[final_rem[1] as usize];
+            let v2 = DECODE_LUT[final_rem[2] as usize];
 
-        let val = match b {
-            b'A'..=b'Z' => b - b'A',
-            b'a'..=b'z' => b - b'a' + 0x1A,
-            b'0'..=b'9' => b - b'0' + 0x34,
-            b'+' => 0x3E,
-            b'/' => 0x3F,
-            _ => return Err(DecodeError::InvalidByte(i, b)),
-        };
+            if (v0 | v1 | v2) & 0xC0 != 0 {
+                for (i, &b) in final_rem.iter().enumerate() {
+                    if DECODE_LUT[b as usize] == 0xFF {
+                        return Err(if b == b'=' {
+                            DecodeError::InvalidPadding
+                        } else {
+                            DecodeError::InvalidByte(offset + i, b)
+                        });
+                    }
+                }
+            }
 
-        n = (n << 6) | (val as u32);
-        bits += 6;
+            if v2 & 0x03 != 0 {
+                return Err(DecodeError::InvalidPadding);
+            }
 
-        if bits >= 8 {
-            bits -= 8;
-            decoded.push((n >> bits) as u8);
+            let n = (v0 as u32) << 10 | (v1 as u32) << 4 | (v2 as u32) >> 2;
+            decoded.extend_from_slice(&[(n >> 8) as u8, n as u8]);
         }
-    }
-
-    if bits > 0 && (n & ((1 << bits) - 1)) != 0 {
-        return Err(DecodeError::InvalidPadding);
+        _ => unreachable!(),
     }
 
     Ok(decoded)
@@ -262,6 +366,18 @@ pub enum DecodeError {
     /// ```
     InvalidPadding,
 }
+
+const DECODE_LUT: [u8; 0x100] = {
+    let mut i = 0;
+    let mut lut = [0xFF; 0x100];
+
+    while i < 0x40 {
+        lut[ALPHABETS[i] as usize] = i as u8;
+        i += 1;
+    }
+
+    lut
+};
 
 #[cfg(test)]
 mod tests {
