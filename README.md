@@ -30,12 +30,12 @@ turbo_base64 = { version = "0.0.5" }
 
 Observed measurements for encode,
 
-| Payload | Avg Time | Throughput |
-|:--------|:---------|:-----------|
-| 4 KiB   | 1.33 µs  | 2.86 GiB/s |
-| 8 KiB   | 2.32 µs  | 3.30 GiB/s |
-| 16 KiB  | 4.27 µs  | 3.57 GiB/s |
-| 32 KiB  | 8.14 µs  | 3.75 GiB/s |
+| Payload  | Avg Time  | Throughput |
+|:---------|:----------|:-----------|
+| 256 KiB  | 37.07 µs  | 6.59 GiB/s |
+| 512 KiB  | 71.85 µs  | 6.80 GiB/s |
+| 1 MiB    | 141.61 µs | 6.90 GiB/s |
+| 2 MiB    | 285.02 µs | 6.85 GiB/s |
 
 Observed measurements for decode,
 
