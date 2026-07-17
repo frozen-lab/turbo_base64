@@ -6,6 +6,12 @@
 
 Hardware accelerated encoding and decoding of bytes or utf-8 using standard RFC 4648 base64 spec
 
+## `no_std` Support
+
+`turbo_base64` crate is fully `#![no_std]` and does not require the Rust standard library.
+
+It can be used in embedded, kernel, bootloader, and other constrained environments.
+
 ## Usage
 
 Add following to your `Cargo.toml`,
@@ -23,18 +29,18 @@ turbo_base64 = { version = "0.0.3" }
 
 Observed measurements for encode,
 
-| Payload      | Avg Time     | Throughput   |
-|:-------------|:-------------|:-------------|
-| 4 KiB        | 2.89 µs      | 1.31 GiB/s   |
-| 64 KiB       | 45.20 µs     | 1.35 GiB/s   |
-| 128 KiB      | 93.78 µs     | 1.05 GiB/s   |
-| 256 KiB      | 183.64 µs    | 1.33 GiB/s   |
+| Payload | Avg Time | Throughput |
+|:--------|:---------|:-----------|
+| 4 KiB   | 2.63 µs  | 1.45 GiB/s |
+| 8 KiB   | 5.34 µs  | 1.43 GiB/s |
+| 16 KiB  | 10.46 µs | 1.46 GiB/s |
+| 32 KiB  | 21.56 µs | 1.42 GiB/s |
 
 Observed measurements for decode,
 
-| Payload      | Avg Time     | Throughput   |
-|:-------------|:-------------|:-------------|
-| 4 KiB        | 4.48 µs      | 872.55 MiB/s |
-| 64 KiB       | 70.75 µs     | 883.38 MiB/s |
-| 128 KiB      | 142.14 µs    | 879.43 MiB/s |
-| 256 KiB      | 292.10 µs    | 855.86 MiB/s |
+| Payload | Avg Time | Throughput |
+|:--------|:---------|:-----------|
+| 4 KiB   | 3.29 µs  | 1.16 GiB/s |
+| 8 KiB   | 6.41 µs  | 1.19 GiB/s |
+| 16 KiB  | 13.34 µs | 1.14 GiB/s |
+| 32 KiB  | 26.04 µs | 1.17 GiB/s |
