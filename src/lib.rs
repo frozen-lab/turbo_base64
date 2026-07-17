@@ -60,6 +60,9 @@
 #[cfg(any(test, doctest))]
 extern crate std;
 
+#[cfg(target_arch = "x86_64")]
+use core::arch::x86_64::*;
+
 const ALPHABETS: &[u8; 0x40] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
 const DECODE_LUT: [u8; 0x100] = {
@@ -73,6 +76,18 @@ const DECODE_LUT: [u8; 0x100] = {
 
     lut
 };
+
+#[inline(always)]
+fn has_ssse3() -> bool {
+    #[cfg(target_arch = "x86_64")]
+    return unsafe {
+        // NOTE: bit 9 of ECX when EAX=1 indicates SSSE3 support
+        (core::arch::x86_64::__cpuid(1).ecx & (1 << 9)) != 0
+    };
+
+    #[cfg(not(target_arch = "x86_64"))]
+    return false;
+}
 
 /// Errors that can occur for `encode` or `decode`
 ///
@@ -188,10 +203,21 @@ pub fn encode(buffer: &[u8], output: &mut [u8]) -> Result<usize, Error> {
         return Err(Error::BufferTooSmall);
     }
 
-    let chunks = buffer.chunks_exact(0x0C);
+    let mut in_idx = 0;
+    let mut out_idx = 0;
+
+    #[cfg(target_arch = "x86_64")]
+    if has_ssse3() {
+        unsafe {
+            let (proc_in, proc_out) = encode_chunk_ssse3(buffer, output);
+            in_idx += proc_in;
+            out_idx += proc_out;
+        }
+    }
+
+    let chunks = buffer[in_idx..].chunks_exact(0x0C);
     let remaining_bytes = chunks.remainder();
 
-    let mut out_idx = 0;
     for chunk in chunks {
         let n0 = (chunk[0] as u32) << 0x10 | (chunk[1] as u32) << 8 | chunk[2] as u32;
         let n1 = (chunk[3] as u32) << 0x10 | (chunk[4] as u32) << 8 | chunk[5] as u32;
@@ -260,6 +286,111 @@ pub fn encode(buffer: &[u8], output: &mut [u8]) -> Result<usize, Error> {
     }
 
     Ok(encoded_len)
+}
+
+#[cfg(target_arch = "x86_64")]
+#[allow(unsafe_op_in_unsafe_fn)]
+#[target_feature(enable = "ssse3")]
+unsafe fn encode_chunk_ssse3(buffer: &[u8], output: &mut [u8]) -> (usize, usize) {
+    let mut in_idx = 0;
+    let mut out_idx = 0;
+
+    let shuf = _mm_setr_epi8(1, 0, 2, 1, 4, 3, 5, 4, 7, 6, 8, 7, 0x0A, 9, 0x0B, 0x0A);
+
+    let mask_t0 = _mm_set1_epi32(0x0FC0FC00_u32 as i32);
+    let mask_t1 = _mm_set1_epi32(0x04000040_u32 as i32);
+    let mask_t2 = _mm_set1_epi32(0x003F03F0_u32 as i32);
+    let mask_t3 = _mm_set1_epi32(0x01000010_u32 as i32);
+
+    let cmp_25 = _mm_set1_epi8(0x19);
+    let cmp_51 = _mm_set1_epi8(0x33);
+    let cmp_61 = _mm_set1_epi8(0x3D);
+    let cmp_62 = _mm_set1_epi8(0x3E);
+
+    let add_41 = _mm_set1_epi8(0x41);
+    let add_25 = _mm_set1_epi8(6);
+    let add_51 = _mm_set1_epi8(-0x4B);
+    let add_61 = _mm_set1_epi8(-0x0F);
+    let add_62 = _mm_set1_epi8(3);
+
+    while in_idx + 0x1C <= buffer.len() {
+        let in1 = _mm_loadu_si128(buffer.as_ptr().add(in_idx) as *const __m128i);
+        let in2 = _mm_loadu_si128(buffer.as_ptr().add(in_idx + 0x0C) as *const __m128i);
+
+        let v1 = _mm_shuffle_epi8(in1, shuf);
+        let v2 = _mm_shuffle_epi8(in2, shuf);
+
+        let t0_1 = _mm_and_si128(v1, mask_t0);
+        let t0_2 = _mm_and_si128(v2, mask_t0);
+        let t1_1 = _mm_mulhi_epu16(t0_1, mask_t1);
+        let t1_2 = _mm_mulhi_epu16(t0_2, mask_t1);
+
+        let t2_1 = _mm_and_si128(v1, mask_t2);
+        let t2_2 = _mm_and_si128(v2, mask_t2);
+        let t3_1 = _mm_mullo_epi16(t2_1, mask_t3);
+        let t3_2 = _mm_mullo_epi16(t2_2, mask_t3);
+
+        let i1 = _mm_or_si128(t1_1, t3_1);
+        let i2 = _mm_or_si128(t1_2, t3_2);
+
+        let m25_1 = _mm_cmpgt_epi8(i1, cmp_25);
+        let m25_2 = _mm_cmpgt_epi8(i2, cmp_25);
+        let m51_1 = _mm_cmpgt_epi8(i1, cmp_51);
+        let m51_2 = _mm_cmpgt_epi8(i2, cmp_51);
+        let m61_1 = _mm_cmpgt_epi8(i1, cmp_61);
+        let m61_2 = _mm_cmpgt_epi8(i2, cmp_61);
+        let m62_1 = _mm_cmpgt_epi8(i1, cmp_62);
+        let m62_2 = _mm_cmpgt_epi8(i2, cmp_62);
+
+        let mut a1 = _mm_add_epi8(i1, add_41);
+        let mut a2 = _mm_add_epi8(i2, add_41);
+
+        a1 = _mm_add_epi8(a1, _mm_and_si128(m25_1, add_25));
+        a2 = _mm_add_epi8(a2, _mm_and_si128(m25_2, add_25));
+        a1 = _mm_add_epi8(a1, _mm_and_si128(m51_1, add_51));
+        a2 = _mm_add_epi8(a2, _mm_and_si128(m51_2, add_51));
+        a1 = _mm_add_epi8(a1, _mm_and_si128(m61_1, add_61));
+        a2 = _mm_add_epi8(a2, _mm_and_si128(m61_2, add_61));
+        a1 = _mm_add_epi8(a1, _mm_and_si128(m62_1, add_62));
+        a2 = _mm_add_epi8(a2, _mm_and_si128(m62_2, add_62));
+
+        _mm_storeu_si128(output.as_mut_ptr().add(out_idx) as *mut __m128i, a1);
+        _mm_storeu_si128(output.as_mut_ptr().add(out_idx + 0x10) as *mut __m128i, a2);
+
+        in_idx += 0x18;
+        out_idx += 0x20;
+    }
+
+    // Process remainder 12-byte chunk using the same preloaded constants
+    if in_idx + 0x10 <= buffer.len() {
+        let in_data = _mm_loadu_si128(buffer.as_ptr().add(in_idx) as *const __m128i);
+        let v = _mm_shuffle_epi8(in_data, shuf);
+
+        let t0 = _mm_and_si128(v, mask_t0);
+        let t1 = _mm_mulhi_epu16(t0, mask_t1);
+        let t2 = _mm_and_si128(v, mask_t2);
+        let t3 = _mm_mullo_epi16(t2, mask_t3);
+
+        let i = _mm_or_si128(t1, t3);
+
+        let m25 = _mm_cmpgt_epi8(i, cmp_25);
+        let m51 = _mm_cmpgt_epi8(i, cmp_51);
+        let m61 = _mm_cmpgt_epi8(i, cmp_61);
+        let m62 = _mm_cmpgt_epi8(i, cmp_62);
+
+        let mut a = _mm_add_epi8(i, add_41);
+        a = _mm_add_epi8(a, _mm_and_si128(m25, add_25));
+        a = _mm_add_epi8(a, _mm_and_si128(m51, add_51));
+        a = _mm_add_epi8(a, _mm_and_si128(m61, add_61));
+        a = _mm_add_epi8(a, _mm_and_si128(m62, add_62));
+
+        _mm_storeu_si128(output.as_mut_ptr().add(out_idx) as *mut __m128i, a);
+
+        in_idx += 0x0C;
+        out_idx += 0x10;
+    }
+
+    (in_idx, out_idx)
 }
 
 /// Decodes a standard RFC 4648 base64 encoded byte slice
