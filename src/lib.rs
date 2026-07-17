@@ -28,15 +28,15 @@
 //! ## Example
 //!
 //! ```
-//! use turbo_base64::{encode, decode};
+//! use turbo_base64::{encode, decode, encoded_len, decoded_len};
 //!
 //! let data = b"Hello, Rust!";
-//! let mut encoded = vec![0; 0x10];
+//! let mut encoded = vec![0; encoded_len(data.len())];
 //!
 //! let enc_len = encode(data, &mut encoded).unwrap();
 //! assert_eq!(&encoded[..enc_len], b"SGVsbG8sIFJ1c3Qh");
 //!
-//! let mut decoded = vec![0; 0x0C];
+//! let mut decoded = vec![0; decoded_len(encoded.len())];
 //! let dec_len = decode(&encoded[..enc_len], &mut decoded).unwrap();
 //! assert_eq!(&decoded[..dec_len], data);
 //! ```
@@ -80,21 +80,83 @@ const DECODE_LUT: [u8; 0x100] = {
 /// assert_eq!(decode(b"Z", &mut buf), Err(Error::InvalidLength));
 /// assert_eq!(decode(b"Z=9v", &mut buf), Err(Error::InvalidPadding));
 /// assert_eq!(decode(b"Zg =", &mut buf), Err(Error::InvalidByte(2, b' ')));
-/// assert_eq!(decode(b"Zm9vYmFy", &mut Vec::new()), Err(Error::BufferTooSmall));
+/// assert_eq!(decode(b"Zm9vYmFy", &mut []), Err(Error::BufferTooSmall));
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Error {
     /// Encountered a character outside the standard base64 alphabet
+    ///
+    /// ## Example
+    ///
+    /// ```
+    /// use turbo_base64::{decode, Error};
+    /// let mut buf = [0u8; 8];
+    /// assert_eq!(decode(b"Zg =", &mut buf), Err(Error::InvalidByte(2, b' ')));
+    /// ```
     InvalidByte(usize, u8),
 
     /// The length of the input buffer was not a multiple of `4`
+    ///
+    /// ## Example
+    ///
+    /// ```
+    /// use turbo_base64::{decode, Error};
+    /// let mut buf = [0u8; 8];
+    /// assert_eq!(decode(b"Z", &mut buf), Err(Error::InvalidLength));
+    /// ```
     InvalidLength,
 
     /// Padding `=` characters were misplaced or exceeded the maximum of `2`
+    ///
+    /// ## Example
+    ///
+    /// ```
+    /// use turbo_base64::{decode, Error};
+    /// let mut buf = [0u8; 8];
+    /// assert_eq!(decode(b"Z=9v", &mut buf), Err(Error::InvalidPadding));
+    /// ```
     InvalidPadding,
 
     /// The provided output buffer is too small to hold the decoded data
+    ///
+    /// ## Example
+    ///
+    /// ```
+    /// use turbo_base64::{encode, Error};
+    /// let mut buf = [0u8; 2];
+    /// assert_eq!(encode(b"foobar", &mut buf), Err(Error::BufferTooSmall));
+    /// ```
     BufferTooSmall,
+}
+
+/// Calculates the exact required output buffer length for encoding
+///
+/// ## Example
+///
+/// ```
+/// use turbo_base64::encoded_len;
+///
+/// assert_eq!(encoded_len(5), 8);
+/// assert_eq!(encoded_len(0), 0);
+/// ```
+#[inline(always)]
+pub const fn encoded_len(input_len: usize) -> usize {
+    (input_len + 2) / 3 * 4
+}
+
+/// Calculates the maximum expected output buffer length for decoding
+///
+/// ## Example
+///
+/// ```
+/// use turbo_base64::decoded_len;
+///
+/// assert_eq!(decoded_len(8), 6);
+/// assert_eq!(decoded_len(0), 0);
+/// ```
+#[inline(always)]
+pub const fn decoded_len(input_len: usize) -> usize {
+    (input_len / 4) * 3
 }
 
 /// Encodes a slice of bytes into standard RFC 4648 base64
@@ -102,10 +164,12 @@ pub enum Error {
 /// ## Example
 ///
 /// ```
-/// use turbo_base64::encode;
+/// use turbo_base64::{encode, encoded_len};
 ///
-/// let mut buf = [0u8; 8];
-/// let len = encode(b"fooba", &mut buf).unwrap();
+/// const INPUT: &[u8] = b"fooba";
+/// let mut buf = [0u8; encoded_len(INPUT.len())];
+///
+/// let len = encode(INPUT, &mut buf).unwrap();
 /// assert_eq!(&buf[..len], b"Zm9vYmE=");
 ///
 /// let len_empty = encode(b"", &mut buf).unwrap();
@@ -119,10 +183,10 @@ pub fn encode(buffer: &[u8], output: &mut [u8]) -> Result<usize, Error> {
         return Err(Error::BufferTooSmall);
     }
 
-    let chunks = buffer.chunks_exact(12);
+    let chunks = buffer.chunks_exact(0x0C);
     let remaining_bytes = chunks.remainder();
-    let mut out_idx = 0;
 
+    let mut out_idx = 0;
     for chunk in chunks {
         let n0 = (chunk[0] as u32) << 0x10 | (chunk[1] as u32) << 8 | chunk[2] as u32;
         let n1 = (chunk[3] as u32) << 0x10 | (chunk[4] as u32) << 8 | chunk[5] as u32;
@@ -147,7 +211,8 @@ pub fn encode(buffer: &[u8], output: &mut [u8]) -> Result<usize, Error> {
             ALPHABETS[((n3 >> 6) & 0x3F) as usize],
             ALPHABETS[(n3 & 0x3F) as usize],
         ]);
-        out_idx += 16;
+
+        out_idx += 0x10;
     }
 
     let sub_chunks = remaining_bytes.chunks_exact(3);
@@ -162,6 +227,7 @@ pub fn encode(buffer: &[u8], output: &mut [u8]) -> Result<usize, Error> {
             ALPHABETS[((n >> 6) & 0x3F) as usize],
             ALPHABETS[(n & 0x3F) as usize],
         ]);
+
         out_idx += 4;
     }
 
@@ -196,15 +262,17 @@ pub fn encode(buffer: &[u8], output: &mut [u8]) -> Result<usize, Error> {
 /// ## Example
 ///
 /// ```
-/// use turbo_base64::{decode, Error};
+/// use turbo_base64::{decode, decoded_len, Error};
 ///
-/// let mut buf = [0u8; 6];
-/// let len = decode(b"Zm9vYmFy", &mut buf).unwrap();
+/// const ENCODED: &[u8] = b"Zm9vYmFy";
+///
+/// let mut buf = [0u8; decoded_len(ENCODED.len())];
+/// let len = decode(ENCODED, &mut buf).unwrap();
 /// assert_eq!(&buf[..len], b"foobar");
 ///
-/// let mut buf = [0u8; 2];
-/// let len = decode(b"Zm8=", &mut buf).unwrap();
-/// assert_eq!(&buf[..len], b"fo");
+/// let mut buf2 = [0u8; decoded_len(4)];
+/// let len2 = decode(b"Zm8=", &mut buf2).unwrap();
+/// assert_eq!(&buf2[..len2], b"fo");
 ///
 /// assert_eq!(decode(b"Zg =", &mut buf), Err(Error::InvalidByte(2, b' ')));
 /// assert_eq!(decode(b"Z", &mut buf), Err(Error::InvalidLength));
@@ -296,7 +364,7 @@ pub fn decode(buffer: &[u8], output: &mut [u8]) -> Result<usize, Error> {
         ]);
 
         offset += 0x10;
-        out_idx += 12;
+        out_idx += 0x0C;
     }
 
     let sub_chunks = remainder.chunks_exact(4);
@@ -322,6 +390,7 @@ pub fn decode(buffer: &[u8], output: &mut [u8]) -> Result<usize, Error> {
 
         let n = (v0 as u32) << 0x12 | (v1 as u32) << 0x0C | (v2 as u32) << 6 | (v3 as u32);
         output[out_idx..out_idx + 3].copy_from_slice(&[(n >> 0x10) as u8, (n >> 8) as u8, n as u8]);
+
         offset += 4;
         out_idx += 3;
     }
@@ -404,11 +473,11 @@ mod tests {
                 let expected_encoded =
                     expected_encoded.strip_suffix(b" ").unwrap_or(expected_encoded);
 
-                let mut enc_buf = vec![0u8; (plain.len() + 2) / 3 * 4];
+                let mut enc_buf = vec![0u8; encoded_len(plain.len())];
                 let enc_len = encode(plain, &mut enc_buf).unwrap();
                 assert_eq!(&enc_buf[..enc_len], expected_encoded);
 
-                let mut dec_buf = vec![0u8; plain.len()];
+                let mut dec_buf = vec![0u8; decoded_len(enc_len)];
                 let dec_len = decode(&enc_buf[..enc_len], &mut dec_buf).unwrap();
                 assert_eq!(&dec_buf[..dec_len], plain);
             }
@@ -416,7 +485,8 @@ mod tests {
 
         #[test]
         fn ok_invalid_length() {
-            let mut buf = [0u8; 10];
+            let mut buf = [0u8; 0x0A];
+
             assert_eq!(decode(b"Z", &mut buf), Err(Error::InvalidLength));
             assert_eq!(decode(b"Zg", &mut buf), Err(Error::InvalidLength));
             assert_eq!(decode(b"Zg=", &mut buf), Err(Error::InvalidLength));
@@ -425,7 +495,8 @@ mod tests {
 
         #[test]
         fn ok_invalid_chars() {
-            let mut buf = [0u8; 10];
+            let mut buf = [0u8; 0x0A];
+
             assert_eq!(decode(b"Zg =", &mut buf), Err(Error::InvalidByte(2, b' ')));
             assert_eq!(decode(b"Zg\n=", &mut buf), Err(Error::InvalidByte(2, b'\n')));
             assert_eq!(decode(b"Zm9v-mFy", &mut buf), Err(Error::InvalidByte(4, b'-')));
@@ -433,18 +504,20 @@ mod tests {
 
         #[test]
         fn ok_invalid_padding_placement() {
-            let mut buf = [0u8; 10];
+            let mut buf = [0u8; 0x0A];
+
             assert_eq!(decode(b"=m9v", &mut buf), Err(Error::InvalidPadding));
             assert_eq!(decode(b"Z=9v", &mut buf), Err(Error::InvalidPadding));
         }
 
         #[test]
         fn ok_binary_roundtrip() {
-            let binary_data: Vec<u8> = (0..=255).collect();
-            let mut enc = vec![0u8; (binary_data.len() + 2) / 3 * 4];
+            let binary_data: Vec<u8> = (0..=0xFF).collect();
+
+            let mut enc = vec![0u8; encoded_len(binary_data.len())];
             let enc_len = encode(&binary_data, &mut enc).unwrap();
 
-            let mut dec = vec![0u8; binary_data.len()];
+            let mut dec = vec![0u8; decoded_len(enc_len)];
             let dec_len = decode(&enc[..enc_len], &mut dec).unwrap();
             assert_eq!(&dec[..dec_len], binary_data);
         }
@@ -464,7 +537,7 @@ mod tests {
                 let mut original_data = vec![0u8; len];
                 rng.fill(&mut original_data[..]);
 
-                let mut turbo_encoded = vec![0u8; (original_data.len() + 2) / 3 * 4];
+                let mut turbo_encoded = vec![0u8; encoded_len(original_data.len())];
                 let enc_len = encode(&original_data, &mut turbo_encoded).unwrap();
                 let standard_encoded = BASE64_STANDARD.encode(&original_data);
 
@@ -474,7 +547,7 @@ mod tests {
                     "Encoding parity failure at size {len}!"
                 );
 
-                let mut turbo_decoded = vec![0u8; len];
+                let mut turbo_decoded = vec![0u8; decoded_len(enc_len)];
                 let dec_len = decode(&turbo_encoded[..enc_len], &mut turbo_decoded).unwrap();
                 let standard_decoded = BASE64_STANDARD.decode(&standard_encoded).unwrap();
 
@@ -494,8 +567,8 @@ mod tests {
             for _ in 0..0x400 {
                 let len = rng.random_range(1..0x200) * 4;
 
-                let temp_data = vec![0u8; len / 4 * 3];
-                let mut valid_base64_string = vec![0u8; len];
+                let temp_data = vec![0u8; decoded_len(len)];
+                let mut valid_base64_string = vec![0u8; encoded_len(temp_data.len())];
                 let enc_len = encode(&temp_data, &mut valid_base64_string).unwrap();
                 valid_base64_string.truncate(enc_len);
 
@@ -541,10 +614,10 @@ mod tests {
             for &text in &ok_strings {
                 let bytes = text.as_bytes();
 
-                let mut enc = vec![0u8; (bytes.len() + 2) / 3 * 4];
+                let mut enc = vec![0u8; encoded_len(bytes.len())];
                 let enc_len = encode(bytes, &mut enc).unwrap();
 
-                let mut dec_bytes = vec![0u8; bytes.len()];
+                let mut dec_bytes = vec![0u8; decoded_len(enc_len)];
                 let dec_len = decode(&enc[..enc_len], &mut dec_bytes).unwrap();
 
                 let dec_string = String::from_utf8(dec_bytes[..dec_len].to_vec()).unwrap();
@@ -562,7 +635,7 @@ mod tests {
                 let text: String = (0..len).map(|_| rng.random::<char>()).collect();
                 let bytes = text.as_bytes();
 
-                let mut turbo_encoded = vec![0u8; (bytes.len() + 2) / 3 * 4];
+                let mut turbo_encoded = vec![0u8; encoded_len(bytes.len())];
                 let enc_len = encode(bytes, &mut turbo_encoded).unwrap();
                 let standard_encoded = BASE64_STANDARD.encode(bytes);
 
@@ -572,7 +645,7 @@ mod tests {
                     "UTF-8 Encoding parity failure at string length {len}!"
                 );
 
-                let mut turbo_decoded = vec![0u8; bytes.len()];
+                let mut turbo_decoded = vec![0u8; decoded_len(enc_len)];
                 let dec_len = decode(&turbo_encoded[..enc_len], &mut turbo_decoded).unwrap();
                 let standard_decoded = BASE64_STANDARD.decode(&standard_encoded).unwrap();
 
