@@ -32,10 +32,10 @@ Observed measurements for encode,
 
 | Payload | Avg Time | Throughput |
 |:--------|:---------|:-----------|
-| 4 KiB   | 2.63 µs  | 1.45 GiB/s |
-| 8 KiB   | 5.34 µs  | 1.43 GiB/s |
-| 16 KiB  | 10.46 µs | 1.46 GiB/s |
-| 32 KiB  | 21.56 µs | 1.42 GiB/s |
+| 4 KiB   | 1.33 µs  | 2.86 GiB/s |
+| 8 KiB   | 2.32 µs  | 3.30 GiB/s |
+| 16 KiB  | 4.27 µs  | 3.57 GiB/s |
+| 32 KiB  | 8.14 µs  | 3.75 GiB/s |
 
 Observed measurements for decode,
 
