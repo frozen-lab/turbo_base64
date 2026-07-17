@@ -78,15 +78,11 @@ const DECODE_LUT: [u8; 0x100] = {
 };
 
 #[inline(always)]
-fn has_ssse3() -> bool {
-    #[cfg(target_arch = "x86_64")]
-    return unsafe {
-        // NOTE: bit 9 of ECX when EAX=1 indicates SSSE3 support
-        (core::arch::x86_64::__cpuid(1).ecx & (1 << 9)) != 0
-    };
-
-    #[cfg(not(target_arch = "x86_64"))]
-    return false;
+#[cfg(target_arch = "x86_64")]
+#[allow(unsafe_op_in_unsafe_fn)]
+unsafe fn has_ssse3() -> bool {
+    // NOTE: bit 9 of ECX when EAX=1 indicates SSSE3 support
+    (core::arch::x86_64::__cpuid(1).ecx & (1 << 9)) != 0
 }
 
 /// Errors that can occur for `encode` or `decode`
@@ -196,6 +192,7 @@ pub const fn decoded_len(input_len: usize) -> usize {
 /// assert_eq!(len_empty, 0);
 /// ```
 #[inline(always)]
+#[allow(unused_mut)]
 pub fn encode(buffer: &[u8], output: &mut [u8]) -> Result<usize, Error> {
     let encoded_len = (buffer.len() + 2) / 3 * 4;
 
@@ -207,7 +204,7 @@ pub fn encode(buffer: &[u8], output: &mut [u8]) -> Result<usize, Error> {
     let mut out_idx = 0;
 
     #[cfg(target_arch = "x86_64")]
-    if has_ssse3() {
+    if unsafe { has_ssse3() } {
         unsafe {
             let (proc_in, proc_out) = encode_chunk_ssse3(buffer, output);
             in_idx += proc_in;

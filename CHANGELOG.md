@@ -1,5 +1,8 @@
 # Changelog
 
+## [0.0.5](https://github.com/frozen-lab/turbo_base64/compare/v0.0.4...v0.0.5) - 2026-07-17
+- Improved `encode` perf by 110% w/ use of `ssse4.2` SIMD ISA  
+
 ## [0.0.4](https://github.com/frozen-lab/turbo_base64/compare/v0.0.3...v0.0.4) - 2026-07-17
 - Migration to be strictly `no_std` w/o requiring a global allocator
 - Impl of `encoded_len` & `decoded_len`
