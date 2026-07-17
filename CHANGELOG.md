@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.0.4](https://github.com/frozen-lab/turbo_base64/compare/v0.0.3...v0.0.4) - 2026-07-17
+- Migration to be strictly `no_std` w/o requiring a global allocator
+- Impl of `encoded_len` & `decoded_len`
+
 ## [0.0.3](https://github.com/frozen-lab/turbo_base64/compare/v0.0.2...v0.0.3) - 2026-07-16
 - Improve throughput of `decode` by 175%
 
