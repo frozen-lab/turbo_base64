@@ -77,20 +77,40 @@ const DECODE_LUT: [u8; 0x100] = {
     lut
 };
 
-#[inline(always)]
-#[cfg(target_arch = "x86_64")]
-#[allow(unsafe_op_in_unsafe_fn)]
-unsafe fn has_ssse3() -> bool {
-    // NOTE: bit 9 of ECX when EAX=1 indicates SSSE3 support
-    (core::arch::x86_64::__cpuid(1).ecx & (1 << 9)) != 0
-}
+use core::sync::atomic::{AtomicU8, Ordering};
+
+// 0: Uninitialized, 1: Fallback, 2: SSSE3, 3: AVX2 4: AVX512
+static CPU_FEATURE: AtomicU8 = AtomicU8::new(0);
 
 #[inline(always)]
-#[cfg(target_arch = "x86_64")]
+fn get_cpu_feature() -> u8 {
+    let feature = CPU_FEATURE.load(Ordering::Relaxed);
+    if feature != 0 {
+        return feature;
+    }
+
+    let detected = unsafe { detect_features() };
+    CPU_FEATURE.store(detected, Ordering::Relaxed);
+    detected
+}
+
+#[cold]
+#[inline(never)]
 #[allow(unsafe_op_in_unsafe_fn)]
-unsafe fn has_avx2() -> bool {
-    // NOTE: bit 5 of EBX when EAX=7, ECX=0 indicates AVX2 support
-    (core::arch::x86_64::__cpuid_count(7, 0).ebx & (1 << 5)) != 0
+unsafe fn detect_features() -> u8 {
+    #[cfg(target_arch = "x86_64")]
+    {
+        if (core::arch::x86_64::__cpuid_count(7, 0).ebx & (1 << 5)) != 0 {
+            return 3;
+        }
+
+        if (core::arch::x86_64::__cpuid(1).ecx & (1 << 9)) != 0 {
+            return 2;
+        }
+    }
+
+    // NOTE: fallback
+    1
 }
 
 /// Errors that can occur for `encode` or `decode`
@@ -213,14 +233,18 @@ pub fn encode(buffer: &[u8], output: &mut [u8]) -> Result<usize, Error> {
 
     #[cfg(target_arch = "x86_64")]
     unsafe {
-        if has_avx2() {
-            let (proc_in, proc_out) = encode_chunk_avx2(buffer, output);
-            in_idx += proc_in;
-            out_idx += proc_out;
-        } else if has_ssse3() {
-            let (proc_in, proc_out) = encode_chunk_ssse3(buffer, output);
-            in_idx += proc_in;
-            out_idx += proc_out;
+        match get_cpu_feature() {
+            3 => {
+                let (proc_in, proc_out) = encode_chunk_avx2(buffer, output);
+                in_idx += proc_in;
+                out_idx += proc_out;
+            }
+            2 => {
+                let (proc_in, proc_out) = encode_chunk_ssse3(buffer, output);
+                in_idx += proc_in;
+                out_idx += proc_out;
+            }
+            _ => {}
         }
     }
 
