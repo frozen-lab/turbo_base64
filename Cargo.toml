@@ -46,5 +46,9 @@ version = "0.10.2"
 version = "0.8.2"
 
 [[bench]]
-name = "bench"
+name = "encode"
+harness = false
+
+[[bench]]
+name = "decode"
 harness = false

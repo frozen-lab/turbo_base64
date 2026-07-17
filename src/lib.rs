@@ -7,8 +7,6 @@
 //!
 //! Observed measurements for encode,
 //!
-//! Observed measurements for encode,
-//!
 //! | Payload      | Avg Time     | Throughput   |
 //! |:-------------|:-------------|:-------------|
 //! | 4 KiB        | 2.89 µs      | 1.31 GiB/s   |
