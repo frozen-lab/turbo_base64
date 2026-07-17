@@ -6,7 +6,7 @@ use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_m
 use turbo_base64::{encode, encoded_len};
 
 pub fn bench_base64(c: &mut Criterion) {
-    let sizes = [0x1000, 0x2000, 0x4000, 0x8_000];
+    let sizes = [0x40_000, 0x80_000, 0x100_000, 0x200_000];
     let mut group = c.benchmark_group("turbo_base64_encode_throughput");
 
     for size in sizes {
