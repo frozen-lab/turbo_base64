@@ -669,7 +669,7 @@ pub fn decode(buffer: &[u8], output: &mut [u8]) -> Result<usize, Error> {
         }
     }
 
-    let chunks = buffer[..len].chunks_exact(0x10);
+    let chunks = buffer[offset..len].chunks_exact(0x10);
     let remainder = chunks.remainder();
 
     for chunk in chunks {
@@ -828,11 +828,11 @@ unsafe fn decode_chunk_ssse3(buffer: &[u8], output: &mut [u8]) -> (usize, usize)
         0x10,
     );
 
-    let lut_roll = _mm_setr_epi8(0, 16, 19, 4, -65, -65, -71, -71, 0, 0, 0, 0, 0, 0, 0, 0);
+    let lut_roll = _mm_setr_epi8(0, 0x10, 0x13, 4, -65, -65, -71, -71, 0, 0, 0, 0, 0, 0, 0, 0);
 
-    let pack_shuf = _mm_setr_epi8(2, 1, 0, 6, 5, 4, 10, 9, 8, 14, 13, 12, -1, -1, -1, -1);
+    let pack_shuf = _mm_setr_epi8(2, 1, 0, 6, 5, 4, 0x0A, 9, 8, 0x0E, 0x0D, 0x0C, -1, -1, -1, -1);
 
-    while in_idx + 16 <= buffer.len() {
+    while in_idx + 0x10 <= buffer.len() {
         let in_val = _mm_loadu_si128(buffer.as_ptr().add(in_idx) as *const __m128i);
 
         let hi_nibbles = _mm_and_si128(_mm_srli_epi32(in_val, 4), _mm_set1_epi8(0x0F));
@@ -846,10 +846,7 @@ unsafe fn decode_chunk_ssse3(buffer: &[u8], output: &mut [u8]) -> (usize, usize)
         }
 
         let eq_2f = _mm_cmpeq_epi8(in_val, _mm_set1_epi8(0x2F));
-        let shift = _mm_shuffle_epi8(
-            lut_roll,
-            _mm_add_epi8(hi_nibbles, _mm_and_si128(eq_2f, _mm_set1_epi8(0x01))),
-        );
+        let shift = _mm_shuffle_epi8(lut_roll, _mm_add_epi8(hi_nibbles, eq_2f));
         let decoded = _mm_add_epi8(in_val, shift);
 
         let merged = _mm_maddubs_epi16(decoded, _mm_set1_epi32(0x01400140));
@@ -857,7 +854,11 @@ unsafe fn decode_chunk_ssse3(buffer: &[u8], output: &mut [u8]) -> (usize, usize)
         let shuf = _mm_shuffle_epi8(packed, pack_shuf);
 
         let shuf_ptr: *const __m128i = &shuf;
-        core::ptr::copy_nonoverlapping(shuf_ptr as *const u8, output.as_mut_ptr().add(out_idx), 12);
+        core::ptr::copy_nonoverlapping(
+            shuf_ptr as *const u8,
+            output.as_mut_ptr().add(out_idx),
+            0x0C,
+        );
 
         in_idx += 0x10;
         out_idx += 0x0C;
@@ -886,16 +887,16 @@ unsafe fn decode_chunk_avx2(buffer: &[u8], output: &mut [u8]) -> (usize, usize) 
     );
 
     let lut_roll = _mm256_setr_epi8(
-        0, 16, 19, 4, -65, -65, -71, -71, 0, 0, 0, 0, 0, 0, 0, 0, 0, 16, 19, 4, -65, -65, -71, -71,
-        0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0x10, 0x13, 4, -65, -65, -71, -71, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x10, 0x13, 4, -65, -65,
+        -71, -71, 0, 0, 0, 0, 0, 0, 0, 0,
     );
 
     let pack_shuf = _mm256_setr_epi8(
-        2, 1, 0, 6, 5, 4, 10, 9, 8, 14, 13, 12, -1, -1, -1, -1, 2, 1, 0, 6, 5, 4, 10, 9, 8, 14, 13,
-        12, -1, -1, -1, -1,
+        2, 1, 0, 6, 5, 4, 0x0A, 9, 8, 0x0E, 0x0D, 0x0C, -1, -1, -1, -1, 2, 1, 0, 6, 5, 4, 0x0A, 9,
+        8, 0x0E, 0x0D, 0x0C, -1, -1, -1, -1,
     );
 
-    while in_idx + 32 <= buffer.len() {
+    while in_idx + 0x20 <= buffer.len() {
         let in_val = _mm256_loadu_si256(buffer.as_ptr().add(in_idx) as *const __m256i);
 
         let hi_nibbles = _mm256_and_si256(_mm256_srli_epi32(in_val, 4), _mm256_set1_epi8(0x0F));
@@ -911,10 +912,7 @@ unsafe fn decode_chunk_avx2(buffer: &[u8], output: &mut [u8]) -> (usize, usize) 
         }
 
         let eq_2f = _mm256_cmpeq_epi8(in_val, _mm256_set1_epi8(0x2F));
-        let shift = _mm256_shuffle_epi8(
-            lut_roll,
-            _mm256_add_epi8(hi_nibbles, _mm256_and_si256(eq_2f, _mm256_set1_epi8(0x01))),
-        );
+        let shift = _mm256_shuffle_epi8(lut_roll, _mm256_add_epi8(hi_nibbles, eq_2f));
         let decoded = _mm256_add_epi8(in_val, shift);
 
         let merged = _mm256_maddubs_epi16(decoded, _mm256_set1_epi32(0x01400140));
@@ -923,8 +921,12 @@ unsafe fn decode_chunk_avx2(buffer: &[u8], output: &mut [u8]) -> (usize, usize) 
 
         let shuf_ptr: *const __m256i = &shuf;
         let shuf_u8 = shuf_ptr as *const u8;
-        core::ptr::copy_nonoverlapping(shuf_u8, output.as_mut_ptr().add(out_idx), 12);
-        core::ptr::copy_nonoverlapping(shuf_u8.add(16), output.as_mut_ptr().add(out_idx + 12), 12);
+        core::ptr::copy_nonoverlapping(shuf_u8, output.as_mut_ptr().add(out_idx), 0x0C);
+        core::ptr::copy_nonoverlapping(
+            shuf_u8.add(0x10),
+            output.as_mut_ptr().add(out_idx + 0x0C),
+            0x0C,
+        );
 
         in_idx += 0x20;
         out_idx += 0x18;
@@ -952,10 +954,11 @@ unsafe fn decode_chunk_avx512(buffer: &[u8], output: &mut [u8]) -> (usize, usize
     );
     let lut_hi = _mm512_broadcast_i32x4(lut_hi_128);
 
-    let lut_roll_128 = _mm_setr_epi8(0, 16, 19, 4, -65, -65, -71, -71, 0, 0, 0, 0, 0, 0, 0, 0);
+    let lut_roll_128 = _mm_setr_epi8(0, 0x10, 0x13, 4, -65, -65, -71, -71, 0, 0, 0, 0, 0, 0, 0, 0);
     let lut_roll = _mm512_broadcast_i32x4(lut_roll_128);
 
-    let pack_shuf_128 = _mm_setr_epi8(2, 1, 0, 6, 5, 4, 10, 9, 8, 14, 13, 12, -1, -1, -1, -1);
+    let pack_shuf_128 =
+        _mm_setr_epi8(2, 1, 0, 6, 5, 4, 0x0A, 9, 8, 0x0E, 0x0D, 0x0C, -1, -1, -1, -1);
     let pack_shuf = _mm512_broadcast_i32x4(pack_shuf_128);
 
     let mask_0f = _mm512_set1_epi8(0x0F);
@@ -963,7 +966,7 @@ unsafe fn decode_chunk_avx512(buffer: &[u8], output: &mut [u8]) -> (usize, usize
     let madd_1 = _mm512_set1_epi32(0x01400140);
     let madd_2 = _mm512_set1_epi32(0x00011000);
 
-    while in_idx + 64 <= buffer.len() {
+    while in_idx + 0x40 <= buffer.len() {
         let in_val = _mm512_loadu_si512(buffer.as_ptr().add(in_idx) as *const __m512i);
 
         let hi_nibbles = _mm512_and_si512(_mm512_srli_epi32(in_val, 4), mask_0f);
@@ -977,7 +980,7 @@ unsafe fn decode_chunk_avx512(buffer: &[u8], output: &mut [u8]) -> (usize, usize
         }
 
         let eq_2f_mask = _mm512_cmpeq_epi8_mask(in_val, mask_2f);
-        let add_val = _mm512_maskz_set1_epi8(eq_2f_mask, 0x01);
+        let add_val = _mm512_maskz_set1_epi8(eq_2f_mask, -1);
         let shift = _mm512_shuffle_epi8(lut_roll, _mm512_add_epi8(hi_nibbles, add_val));
         let decoded = _mm512_add_epi8(in_val, shift);
 
@@ -987,13 +990,25 @@ unsafe fn decode_chunk_avx512(buffer: &[u8], output: &mut [u8]) -> (usize, usize
 
         let shuf_ptr: *const __m512i = &shuf;
         let shuf_u8 = shuf_ptr as *const u8;
-        core::ptr::copy_nonoverlapping(shuf_u8, output.as_mut_ptr().add(out_idx), 12);
-        core::ptr::copy_nonoverlapping(shuf_u8.add(16), output.as_mut_ptr().add(out_idx + 12), 12);
-        core::ptr::copy_nonoverlapping(shuf_u8.add(32), output.as_mut_ptr().add(out_idx + 24), 12);
-        core::ptr::copy_nonoverlapping(shuf_u8.add(48), output.as_mut_ptr().add(out_idx + 36), 12);
+        core::ptr::copy_nonoverlapping(shuf_u8, output.as_mut_ptr().add(out_idx), 0x0C);
+        core::ptr::copy_nonoverlapping(
+            shuf_u8.add(0x10),
+            output.as_mut_ptr().add(out_idx + 0x0C),
+            0x0C,
+        );
+        core::ptr::copy_nonoverlapping(
+            shuf_u8.add(0x20),
+            output.as_mut_ptr().add(out_idx + 0x18),
+            0x0C,
+        );
+        core::ptr::copy_nonoverlapping(
+            shuf_u8.add(0x30),
+            output.as_mut_ptr().add(out_idx + 0x24),
+            0x0C,
+        );
 
-        in_idx += 64;
-        out_idx += 48;
+        in_idx += 0x40;
+        out_idx += 0x30;
     }
 
     (in_idx, out_idx)

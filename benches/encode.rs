@@ -14,9 +14,10 @@ pub fn bench_base64(c: &mut Criterion) {
         1 * KB,
         0x40 * KB,
         0x200 * KB,
-        0x400 * KB,
         1 * MB,
         0x40 * MB,
+        0x80 * MB,
+        0x100 * MB,
         0x200 * MB,
         0x400 * MB,
     ];
