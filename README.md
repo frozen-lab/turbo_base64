@@ -5,7 +5,11 @@
 
 # TurboBase64
 
-Hardware accelerated encoding and decoding of bytes or utf-8 using standard RFC 4648 base64 spec
+Hardware accelerated encoding and decoding of bytes or utf-8 using standard RFC 4648 base64
+specifications.
+
+The encoding and decoding of bytes or UTF-8 as base64 are according to the standard
+[RFC 4648](https://datatracker.ietf.org/doc/html/rfc4648) specification.
 
 ## `no_std` Support
 
