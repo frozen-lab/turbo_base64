@@ -1,5 +1,5 @@
 //! Benchmarks to measure througputs
-//! Run using: `taskset -c 3 cargo bench --bench encode --profile release`
+//! Run using: `taskset -c 3 cargo +nightly bench --bench encode --profile release --nightly`
 
 use core::hint::black_box;
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
@@ -7,9 +7,10 @@ use turbo_base64::{encode, encoded_len};
 
 const KB: usize = 0x400;
 const MB: usize = KB * KB;
+const GB: usize = MB * MB;
 
 pub fn bench_base64(c: &mut Criterion) {
-    let sizes = [0x40 * MB, 0x80 * MB, 0x100 * MB, 0x200 * MB];
+    let sizes = [0x200, 1 * KB, 0x40 * KB, 0x200 * KB, 1 * MB, 0x40 * MB, 0x200 * MB, 1 * GB];
     let mut group = c.benchmark_group("turbo_base64_encode_throughput");
 
     for size in sizes {
