@@ -77,22 +77,20 @@ const DECODE_LUT: [u8; 0x100] = {
     lut
 };
 
-use core::sync::atomic::{AtomicU8, Ordering};
-
 // 0: Uninitialized, 1: Fallback, 2: SSSE3, 3: AVX2 4: AVX512
 #[cfg(target_arch = "x86_64")]
-static CPU_FEATURE: AtomicU8 = AtomicU8::new(0);
+static CPU_FEATURE: core::sync::atomic::AtomicU8 = core::sync::atomic::AtomicU8::new(0);
 
 #[inline(always)]
 #[cfg(target_arch = "x86_64")]
 fn get_cpu_feature() -> u8 {
-    let feature = CPU_FEATURE.load(Ordering::Relaxed);
+    let feature = CPU_FEATURE.load(core::sync::atomic::Ordering::Relaxed);
     if feature != 0 {
         return feature;
     }
 
     let detected = unsafe { detect_features() };
-    CPU_FEATURE.store(detected, Ordering::Relaxed);
+    CPU_FEATURE.store(detected, core::sync::atomic::Ordering::Relaxed);
     detected
 }
 
@@ -1136,8 +1134,9 @@ unsafe fn decode_chunk_neon(buffer: &[u8], output: &mut [u8]) -> (usize, usize) 
 
         let packed = vqtbl1q_u8(merged, pack_shuf);
 
+        let packed_ptr: *const uint8x16_t = &packed;
         core::ptr::copy_nonoverlapping(
-            &packed as *const uint8x16_t as *const u8,
+            packed_ptr.cast::<u8>(),
             output.as_mut_ptr().add(out_idx),
             12,
         );
