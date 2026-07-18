@@ -652,6 +652,11 @@ pub fn decode(buffer: &[u8], output: &mut [u8]) -> Result<usize, Error> {
     #[cfg(target_arch = "x86_64")]
     unsafe {
         match get_cpu_feature() {
+            2 => {
+                let (proc_in, proc_out) = decode_chunk_ssse3(&buffer[..len], output);
+                offset += proc_in;
+                out_idx += proc_out;
+            }
             3 => {
                 let (proc_in, proc_out) = decode_chunk_avx2(&buffer[..len], output);
                 offset += proc_in;
@@ -801,6 +806,61 @@ pub fn decode(buffer: &[u8], output: &mut [u8]) -> Result<usize, Error> {
     }
 
     Ok(expected_len)
+}
+
+#[cfg(target_arch = "x86_64")]
+#[allow(unsafe_op_in_unsafe_fn)]
+#[target_feature(enable = "ssse3")]
+unsafe fn decode_chunk_ssse3(buffer: &[u8], output: &mut [u8]) -> (usize, usize) {
+    let mut in_idx = 0;
+    let mut out_idx = 0;
+
+    let lut_lo = _mm_setr_epi8(
+        0x15, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x13, 0x1A, 0x1B, 0x1B, 0x1B,
+        0x1A,
+    );
+
+    let lut_hi = _mm_setr_epi8(
+        0x10, 0x10, 0x01, 0x02, 0x04, 0x08, 0x04, 0x08, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10,
+        0x10,
+    );
+
+    let lut_roll = _mm_setr_epi8(0, 16, 19, 4, -65, -65, -71, -71, 0, 0, 0, 0, 0, 0, 0, 0);
+
+    let pack_shuf = _mm_setr_epi8(2, 1, 0, 6, 5, 4, 10, 9, 8, 14, 13, 12, -1, -1, -1, -1);
+
+    while in_idx + 16 <= buffer.len() {
+        let in_val = _mm_loadu_si128(buffer.as_ptr().add(in_idx) as *const __m128i);
+
+        let hi_nibbles = _mm_and_si128(_mm_srli_epi32(in_val, 4), _mm_set1_epi8(0x0F));
+        let lo_nibbles = _mm_and_si128(in_val, _mm_set1_epi8(0x0F));
+
+        let hi = _mm_shuffle_epi8(lut_hi, hi_nibbles);
+        let lo = _mm_shuffle_epi8(lut_lo, lo_nibbles);
+
+        if _mm_movemask_epi8(_mm_cmpeq_epi8(_mm_and_si128(hi, lo), _mm_setzero_si128())) != 0 {
+            break;
+        }
+
+        let eq_2f = _mm_cmpeq_epi8(in_val, _mm_set1_epi8(0x2F));
+        let shift = _mm_shuffle_epi8(
+            lut_roll,
+            _mm_add_epi8(hi_nibbles, _mm_and_si128(eq_2f, _mm_set1_epi8(0x01))),
+        );
+        let decoded = _mm_add_epi8(in_val, shift);
+
+        let merged = _mm_maddubs_epi16(decoded, _mm_set1_epi32(0x01400140));
+        let packed = _mm_madd_epi16(merged, _mm_set1_epi32(0x00011000));
+        let shuf = _mm_shuffle_epi8(packed, pack_shuf);
+
+        let shuf_ptr: *const __m128i = &shuf;
+        core::ptr::copy_nonoverlapping(shuf_ptr as *const u8, output.as_mut_ptr().add(out_idx), 12);
+
+        in_idx += 0x10;
+        out_idx += 0x0C;
+    }
+
+    (in_idx, out_idx)
 }
 
 #[cfg(target_arch = "x86_64")]
