@@ -266,6 +266,13 @@ pub fn encode(buffer: &[u8], output: &mut [u8]) -> Result<usize, Error> {
         }
     }
 
+    #[cfg(target_arch = "aarch64")]
+    unsafe {
+        let (proc_in, proc_out) = encode_chunk_neon(buffer, output);
+        in_idx += proc_in;
+        out_idx += proc_out;
+    }
+
     let chunks = buffer[in_idx..].chunks_exact(0x0C);
     let remaining_bytes = chunks.remainder();
 
@@ -591,6 +598,51 @@ unsafe fn encode_chunk_avx512(buffer: &[u8], output: &mut [u8]) -> (usize, usize
 
         in_idx += 0x30;
         out_idx += 0x40;
+    }
+
+    (in_idx, out_idx)
+}
+
+#[cfg(target_arch = "aarch64")]
+#[allow(unsafe_op_in_unsafe_fn)]
+#[target_feature(enable = "neon")]
+unsafe fn encode_chunk_neon(buffer: &[u8], output: &mut [u8]) -> (usize, usize) {
+    use core::arch::aarch64::*;
+
+    let mut in_idx = 0;
+    let mut out_idx = 0;
+
+    let shuf = vld1q_u8([0, 0, 1, 2, 3, 3, 4, 5, 6, 6, 7, 8, 9, 9, 10, 11].as_ptr());
+    let shift_l = vld1q_s8([-2i8, 4, 2, 0, -2, 4, 2, 0, -2, 4, 2, 0, -2, 4, 2, 0].as_ptr());
+
+    let shift_r =
+        vld1q_s8([-8i8, -4, -6, -8, -8, -4, -6, -8, -8, -4, -6, -8, -8, -4, -6, -8].as_ptr());
+
+    let mask_3f = vdupq_n_u8(0x3F);
+
+    let alpha = uint8x16x4_t(
+        vld1q_u8(b"ABCDEFGHIJKLMNOP".as_ptr()),
+        vld1q_u8(b"QRSTUVWXYZabcdef".as_ptr()),
+        vld1q_u8(b"ghijklmnopqrstuv".as_ptr()),
+        vld1q_u8(b"wxyz0123456789+/".as_ptr()),
+    );
+
+    while in_idx + 16 <= buffer.len() {
+        let input = vld1q_u8(buffer.as_ptr().add(in_idx));
+
+        let v = vqtbl1q_u8(input, shuf);
+        let v_next = vextq_u8(v, v, 1);
+
+        let part_l = vshlq_u8(v, shift_l);
+        let part_r = vshlq_u8(v_next, shift_r);
+
+        let indices = vandq_u8(vorrq_u8(part_l, part_r), mask_3f);
+        let encoded = vqtbl4q_u8(alpha, indices);
+
+        vst1q_u8(output.as_mut_ptr().add(out_idx), encoded);
+
+        in_idx += 12;
+        out_idx += 16;
     }
 
     (in_idx, out_idx)
