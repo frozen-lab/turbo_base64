@@ -19,12 +19,42 @@ Add following to your `Cargo.toml`,
 
 ```toml
 [dependencies]
-turbo_base64 = { version = "0.0.5" }
+turbo_base64 = { version = "0.1.0" }
 
 ```
 
 > [!NOTE]
 > Current version of `turbo_base64` requires Rust 1.86 or later.
+
+## AVX-512 Support
+
+`turbo_base64` provides optional AVX-512 accelerated implementations behind the `nightly` feature.
+
+This feature is only helpful for x86_64 targets and requires:
+
+- Rust nightly toolchain
+- An x86_64 CPU with AVX-512 support
+
+Enable it in `Cargo.toml`:
+
+```toml
+[target.'cfg(target_arch = "x86_64")'.dependencies]
+turbo_base64 = { version = "0.1.0", features = ["nightly"] }
+```
+
+Or build using Cargo:
+
+```bash
+cargo +nightly build --features nightly
+```
+
+> [!NOTE]
+> The `nightly` feature is **disabled by default** and is only required to enable AVX-512
+> implementations. Stable Rust users do not need to enable it.
+
+> [!NOTE]
+> When enabled, AVX-512 implementations are selected only on CPUs that support the required
+> instruction set. Other systems automatically fall back AVX2 or older ISA's.
 
 ## Benchmarks
 
@@ -57,3 +87,19 @@ Observed measurements for decode,
 |      256 MiB |                     4.327 |                      3.886 |
 |      512 MiB |                     4.266 |                      3.884 |
 |        1 GiB |                     4.243 |                      3.887 |
+
+ ## Example
+
+ ```rs
+ use turbo_base64::{encode, decode, encoded_len, decoded_len};
+
+ let data = b"Hello, Rust!";
+ let mut encoded = vec![0; encoded_len(data.len())];
+
+ let enc_len = encode(data, &mut encoded).unwrap();
+ assert_eq!(&encoded[..enc_len], b"SGVsbG8sIFJ1c3Qh");
+
+ let mut decoded = vec![0; decoded_len(encoded.len())];
+ let dec_len = decode(&encoded[..enc_len], &mut decoded).unwrap();
+ assert_eq!(&decoded[..dec_len], data);
+ ```
