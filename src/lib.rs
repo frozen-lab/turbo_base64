@@ -80,9 +80,11 @@ const DECODE_LUT: [u8; 0x100] = {
 use core::sync::atomic::{AtomicU8, Ordering};
 
 // 0: Uninitialized, 1: Fallback, 2: SSSE3, 3: AVX2 4: AVX512
+#[cfg(target_arch = "x86_64")]
 static CPU_FEATURE: AtomicU8 = AtomicU8::new(0);
 
 #[inline(always)]
+#[cfg(target_arch = "x86_64")]
 fn get_cpu_feature() -> u8 {
     let feature = CPU_FEATURE.load(Ordering::Relaxed);
     if feature != 0 {
@@ -96,6 +98,7 @@ fn get_cpu_feature() -> u8 {
 
 #[cold]
 #[inline(never)]
+#[cfg(target_arch = "x86_64")]
 #[allow(unsafe_op_in_unsafe_fn)]
 unsafe fn detect_features() -> u8 {
     #[cfg(target_arch = "x86_64")]
@@ -721,6 +724,13 @@ pub fn decode(buffer: &[u8], output: &mut [u8]) -> Result<usize, Error> {
         }
     }
 
+    #[cfg(target_arch = "aarch64")]
+    unsafe {
+        let (proc_in, proc_out) = decode_chunk_neon(&buffer[..len], output);
+        offset += proc_in;
+        out_idx += proc_out;
+    }
+
     let chunks = buffer[offset..len].chunks_exact(0x10);
     let remainder = chunks.remainder();
 
@@ -1061,6 +1071,79 @@ unsafe fn decode_chunk_avx512(buffer: &[u8], output: &mut [u8]) -> (usize, usize
 
         in_idx += 0x40;
         out_idx += 0x30;
+    }
+
+    (in_idx, out_idx)
+}
+
+#[cfg(target_arch = "aarch64")]
+#[allow(unsafe_op_in_unsafe_fn)]
+#[target_feature(enable = "neon")]
+unsafe fn decode_chunk_neon(buffer: &[u8], output: &mut [u8]) -> (usize, usize) {
+    use core::arch::aarch64::*;
+
+    let mut in_idx = 0;
+    let mut out_idx = 0;
+
+    let lut_lo = vld1q_u8(
+        [
+            0x15, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x13, 0x1A, 0x1B, 0x1B,
+            0x1B, 0x1A,
+        ]
+        .as_ptr(),
+    );
+    let lut_hi = vld1q_u8(
+        [
+            0x10, 0x10, 0x01, 0x02, 0x04, 0x08, 0x04, 0x08, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10,
+            0x10, 0x10,
+        ]
+        .as_ptr(),
+    );
+
+    let lut_roll =
+        vld1q_u8([0, 0x10, 0x13, 4, 191, 191, 185, 185, 0, 0, 0, 0, 0, 0, 0, 0].as_ptr());
+
+    let shift_l = vld1q_s8([2, 4, 6, 0, 2, 4, 6, 0, 2, 4, 6, 0, 2, 4, 6, 0].as_ptr());
+    let shift_r = vld1q_s8([-4i8, -2, 0, 0, -4, -2, 0, 0, -4, -2, 0, 0, -4, -2, 0, 0].as_ptr());
+    let pack_shuf = vld1q_u8([0, 1, 2, 4, 5, 6, 8, 9, 10, 12, 13, 14, 255, 255, 255, 255].as_ptr());
+
+    let mask_0f = vdupq_n_u8(0x0F);
+    let mask_2f = vdupq_n_u8(0x2F);
+
+    while in_idx + 16 <= buffer.len() {
+        let in_val = vld1q_u8(buffer.as_ptr().add(in_idx));
+
+        let hi_nibbles = vandq_u8(vshrq_n_u8(in_val, 4), mask_0f);
+        let lo_nibbles = vandq_u8(in_val, mask_0f);
+
+        let hi = vqtbl1q_u8(lut_hi, hi_nibbles);
+        let lo = vqtbl1q_u8(lut_lo, lo_nibbles);
+
+        let check = vandq_u8(hi, lo);
+        if vmaxvq_u32(vreinterpretq_u32_u8(check)) != 0 {
+            break;
+        }
+
+        let eq_2f = vceqq_u8(in_val, mask_2f);
+        let idx = vaddq_u8(hi_nibbles, eq_2f);
+        let shift = vqtbl1q_u8(lut_roll, idx);
+
+        let decoded = vaddq_u8(in_val, shift);
+
+        let p1 = vshlq_u8(decoded, shift_l);
+        let p2 = vshlq_u8(vextq_u8(decoded, decoded, 1), shift_r);
+        let merged = vorrq_u8(p1, p2);
+
+        let packed = vqtbl1q_u8(merged, pack_shuf);
+
+        core::ptr::copy_nonoverlapping(
+            &packed as *const uint8x16_t as *const u8,
+            output.as_mut_ptr().add(out_idx),
+            12,
+        );
+
+        in_idx += 16;
+        out_idx += 12;
     }
 
     (in_idx, out_idx)
