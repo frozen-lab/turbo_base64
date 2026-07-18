@@ -412,7 +412,6 @@ unsafe fn encode_chunk_ssse3(buffer: &[u8], output: &mut [u8]) -> (usize, usize)
         out_idx += 0x20;
     }
 
-    // Process remainder 12-byte chunk using the same preloaded constants
     if in_idx + 0x10 <= buffer.len() {
         let in_data = _mm_loadu_si128(buffer.as_ptr().add(in_idx) as *const __m128i);
         let v = _mm_shuffle_epi8(in_data, shuf);
@@ -451,7 +450,6 @@ unsafe fn encode_chunk_avx2(buffer: &[u8], output: &mut [u8]) -> (usize, usize) 
     let mut in_idx = 0;
     let mut out_idx = 0;
 
-    // We permute 32 bytes down to align two contiguous 12-byte blocks into each 128-bit lane
     let perm_idx = _mm256_setr_epi32(0, 1, 2, 0, 3, 4, 5, 0);
 
     let shuf = _mm256_setr_epi8(
@@ -526,7 +524,6 @@ unsafe fn encode_chunk_avx2(buffer: &[u8], output: &mut [u8]) -> (usize, usize) 
         out_idx += 0x40;
     }
 
-    // Process remainder 24-byte chunk
     if in_idx + 0x20 <= buffer.len() {
         let in_data = _mm256_loadu_si256(buffer.as_ptr().add(in_idx) as *const __m256i);
         let p = _mm256_permutevar8x32_epi32(in_data, perm_idx);
@@ -844,7 +841,7 @@ unsafe fn decode_chunk_ssse3(buffer: &[u8], output: &mut [u8]) -> (usize, usize)
         let hi = _mm_shuffle_epi8(lut_hi, hi_nibbles);
         let lo = _mm_shuffle_epi8(lut_lo, lo_nibbles);
 
-        if _mm_movemask_epi8(_mm_cmpeq_epi8(_mm_and_si128(hi, lo), _mm_setzero_si128())) != 0 {
+        if _mm_movemask_epi8(_mm_cmpeq_epi8(_mm_and_si128(hi, lo), _mm_setzero_si128())) != -1 {
             break;
         }
 
@@ -908,7 +905,7 @@ unsafe fn decode_chunk_avx2(buffer: &[u8], output: &mut [u8]) -> (usize, usize) 
         let lo = _mm256_shuffle_epi8(lut_lo, lo_nibbles);
 
         if _mm256_movemask_epi8(_mm256_cmpeq_epi8(_mm256_and_si256(hi, lo), _mm256_setzero_si256()))
-            != 0
+            != -1
         {
             break;
         }
@@ -924,11 +921,10 @@ unsafe fn decode_chunk_avx2(buffer: &[u8], output: &mut [u8]) -> (usize, usize) 
         let packed = _mm256_madd_epi16(merged, _mm256_set1_epi32(0x00011000));
         let shuf = _mm256_shuffle_epi8(packed, pack_shuf);
 
-        let lane0 = _mm256_castsi256_si128(shuf);
-        let lane1 = _mm256_extracti128_si256(shuf, 1);
-
-        _mm_storeu_si128(output.as_mut_ptr().add(out_idx) as *mut __m128i, lane0);
-        _mm_storeu_si128(output.as_mut_ptr().add(out_idx + 12) as *mut __m128i, lane1);
+        let shuf_ptr: *const __m256i = &shuf;
+        let shuf_u8 = shuf_ptr as *const u8;
+        core::ptr::copy_nonoverlapping(shuf_u8, output.as_mut_ptr().add(out_idx), 12);
+        core::ptr::copy_nonoverlapping(shuf_u8.add(16), output.as_mut_ptr().add(out_idx + 12), 12);
 
         in_idx += 0x20;
         out_idx += 0x18;
@@ -956,29 +952,10 @@ unsafe fn decode_chunk_avx512(buffer: &[u8], output: &mut [u8]) -> (usize, usize
     );
     let lut_hi = _mm512_broadcast_i32x4(lut_hi_128);
 
-    let lut_roll_128 = _mm_setr_epi8(
-        0,
-        16,
-        19,
-        4,
-        -65i8 as u8,
-        -65i8 as u8,
-        -71i8 as u8,
-        -71i8 as u8,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-    );
+    let lut_roll_128 = _mm_setr_epi8(0, 16, 19, 4, -65, -65, -71, -71, 0, 0, 0, 0, 0, 0, 0, 0);
     let lut_roll = _mm512_broadcast_i32x4(lut_roll_128);
 
-    let pack_shuf_128 = _mm_setr_epi8(
-        2, 1, 0, 6, 5, 4, 10, 9, 8, 14, 13, 12, -1i8 as u8, -1i8 as u8, -1i8 as u8, -1i8 as u8,
-    );
+    let pack_shuf_128 = _mm_setr_epi8(2, 1, 0, 6, 5, 4, 10, 9, 8, 14, 13, 12, -1, -1, -1, -1);
     let pack_shuf = _mm512_broadcast_i32x4(pack_shuf_128);
 
     let mask_0f = _mm512_set1_epi8(0x0F);
