@@ -649,6 +649,18 @@ pub fn decode(buffer: &[u8], output: &mut [u8]) -> Result<usize, Error> {
     let mut offset = 0;
     let mut out_idx = 0;
 
+    #[cfg(target_arch = "x86_64")]
+    unsafe {
+        match get_cpu_feature() {
+            3 => {
+                let (proc_in, proc_out) = decode_chunk_avx2(&buffer[..len], output);
+                offset += proc_in;
+                out_idx += proc_out;
+            }
+            _ => {}
+        }
+    }
+
     let chunks = buffer[..len].chunks_exact(0x10);
     let remainder = chunks.remainder();
 
@@ -789,6 +801,74 @@ pub fn decode(buffer: &[u8], output: &mut [u8]) -> Result<usize, Error> {
     }
 
     Ok(expected_len)
+}
+
+#[cfg(target_arch = "x86_64")]
+#[allow(unsafe_op_in_unsafe_fn)]
+#[target_feature(enable = "avx2")]
+unsafe fn decode_chunk_avx2(buffer: &[u8], output: &mut [u8]) -> (usize, usize) {
+    let mut in_idx = 0;
+    let mut out_idx = 0;
+
+    let lut_lo = _mm256_setr_epi8(
+        0x15, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x13, 0x1A, 0x1B, 0x1B, 0x1B,
+        0x1A, 0x15, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x13, 0x1A, 0x1B, 0x1B,
+        0x1B, 0x1A,
+    );
+
+    let lut_hi = _mm256_setr_epi8(
+        0x10, 0x10, 0x01, 0x02, 0x04, 0x08, 0x04, 0x08, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10,
+        0x10, 0x10, 0x10, 0x01, 0x02, 0x04, 0x08, 0x04, 0x08, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10,
+        0x10, 0x10,
+    );
+
+    let lut_roll = _mm256_setr_epi8(
+        0, 16, 19, 4, -65, -65, -71, -71, 0, 0, 0, 0, 0, 0, 0, 0, 0, 16, 19, 4, -65, -65, -71, -71,
+        0, 0, 0, 0, 0, 0, 0, 0,
+    );
+
+    let pack_shuf = _mm256_setr_epi8(
+        2, 1, 0, 6, 5, 4, 10, 9, 8, 14, 13, 12, -1, -1, -1, -1, 2, 1, 0, 6, 5, 4, 10, 9, 8, 14, 13,
+        12, -1, -1, -1, -1,
+    );
+
+    while in_idx + 32 <= buffer.len() {
+        let in_val = _mm256_loadu_si256(buffer.as_ptr().add(in_idx) as *const __m256i);
+
+        let hi_nibbles = _mm256_and_si256(_mm256_srli_epi32(in_val, 4), _mm256_set1_epi8(0x0F));
+        let lo_nibbles = _mm256_and_si256(in_val, _mm256_set1_epi8(0x0F));
+
+        let hi = _mm256_shuffle_epi8(lut_hi, hi_nibbles);
+        let lo = _mm256_shuffle_epi8(lut_lo, lo_nibbles);
+
+        if _mm256_movemask_epi8(_mm256_cmpeq_epi8(_mm256_and_si256(hi, lo), _mm256_setzero_si256()))
+            != 0
+        {
+            break;
+        }
+
+        let eq_2f = _mm256_cmpeq_epi8(in_val, _mm256_set1_epi8(0x2F));
+        let shift = _mm256_shuffle_epi8(
+            lut_roll,
+            _mm256_add_epi8(hi_nibbles, _mm256_and_si256(eq_2f, _mm256_set1_epi8(0x01))),
+        );
+        let decoded = _mm256_add_epi8(in_val, shift);
+
+        let merged = _mm256_maddubs_epi16(decoded, _mm256_set1_epi32(0x01400140));
+        let packed = _mm256_madd_epi16(merged, _mm256_set1_epi32(0x00011000));
+        let shuf = _mm256_shuffle_epi8(packed, pack_shuf);
+
+        let lane0 = _mm256_castsi256_si128(shuf);
+        let lane1 = _mm256_extracti128_si256(shuf, 1);
+
+        _mm_storeu_si128(output.as_mut_ptr().add(out_idx) as *mut __m128i, lane0);
+        _mm_storeu_si128(output.as_mut_ptr().add(out_idx + 12) as *mut __m128i, lane1);
+
+        in_idx += 0x20;
+        out_idx += 0x18;
+    }
+
+    (in_idx, out_idx)
 }
 
 #[cfg(test)]
