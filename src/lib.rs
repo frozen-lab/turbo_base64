@@ -100,6 +100,18 @@ fn get_cpu_feature() -> u8 {
 unsafe fn detect_features() -> u8 {
     #[cfg(target_arch = "x86_64")]
     {
+        #[cfg(feature = "nightly")]
+        {
+            let cpuid7 = core::arch::x86_64::__cpuid_count(7, 0);
+
+            let avx512f_bw = (1 << 16) | (1 << 30);
+            let vbmi_vbmi2 = (1 << 1) | (1 << 6);
+
+            if (cpuid7.ebx & avx512f_bw) == avx512f_bw && (cpuid7.ecx & vbmi_vbmi2) == vbmi_vbmi2 {
+                return 4;
+            }
+        }
+
         if (core::arch::x86_64::__cpuid_count(7, 0).ebx & (1 << 5)) != 0 {
             return 3;
         }
@@ -234,6 +246,12 @@ pub fn encode(buffer: &[u8], output: &mut [u8]) -> Result<usize, Error> {
     #[cfg(target_arch = "x86_64")]
     unsafe {
         match get_cpu_feature() {
+            #[cfg(feature = "nightly")]
+            4 => {
+                let (proc_in, proc_out) = encode_chunk_avx512(buffer, output);
+                in_idx += proc_in;
+                out_idx += proc_out;
+            }
             3 => {
                 let (proc_in, proc_out) = encode_chunk_avx2(buffer, output);
                 in_idx += proc_in;
@@ -536,6 +554,46 @@ unsafe fn encode_chunk_avx2(buffer: &[u8], output: &mut [u8]) -> (usize, usize) 
 
         in_idx += 0x18;
         out_idx += 0x20;
+    }
+
+    (in_idx, out_idx)
+}
+
+#[allow(unsafe_op_in_unsafe_fn)]
+#[cfg(all(target_arch = "x86_64", feature = "nightly"))]
+#[target_feature(enable = "avx512f,avx512bw,avx512vbmi,avx512vbmi2")]
+unsafe fn encode_chunk_avx512(buffer: &[u8], output: &mut [u8]) -> (usize, usize) {
+    let mut in_idx = 0;
+    let mut out_idx = 0;
+
+    let alphabet = _mm512_loadu_si512(ALPHABETS.as_ptr() as *const __m512i);
+    let expand_bswap = _mm512_set_epi8(
+        42, 43, 44, 45, 46, 47, 0, 0, 36, 37, 38, 39, 40, 41, 0, 0, 30, 31, 32, 33, 34, 35, 0, 0,
+        24, 25, 26, 27, 28, 29, 0, 0, 18, 19, 20, 21, 22, 23, 0, 0, 12, 13, 14, 15, 16, 17, 0, 0,
+        6, 7, 8, 9, 10, 11, 0, 0, 0, 1, 2, 3, 4, 5, 0, 0,
+    );
+
+    let shift_ctrl = _mm512_set1_epi64(0x10161C22282E343A_u64 as i64);
+    let mask_3f = _mm512_set1_epi8(0x3F);
+
+    while in_idx + 0x30 <= buffer.len() {
+        let in_data = if in_idx + 0x40 <= buffer.len() {
+            _mm512_loadu_si512(buffer.as_ptr().add(in_idx) as *const __m512i)
+        } else {
+            _mm512_maskz_loadu_epi8(0xFFFFFFFFFFFF, buffer.as_ptr().add(in_idx) as *const i8)
+        };
+
+        let expanded = _mm512_permutexvar_epi8(expand_bswap, in_data);
+
+        let shifted = _mm512_multishift_epi64_epi8(shift_ctrl, expanded);
+        let indices = _mm512_and_si512(shifted, mask_3f);
+
+        let encoded = _mm512_permutexvar_epi8(indices, alphabet);
+
+        _mm512_storeu_si512(output.as_mut_ptr().add(out_idx) as *mut __m512i, encoded);
+
+        in_idx += 0x30;
+        out_idx += 0x40;
     }
 
     (in_idx, out_idx)

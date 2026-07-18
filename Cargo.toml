@@ -36,6 +36,9 @@ inherits = "release"
 overflow-checks = false
 debug-assertions = false
 
+[features]
+nightly = []
+
 [dev-dependencies.base64]
 version = "0.22.1"
 
